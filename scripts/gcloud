@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_dir="$(cd "$script_dir/.." && pwd)"
+gcloud_bin="$repo_dir/.tools/google-cloud-sdk/bin/gcloud"
+python_bin="$repo_dir/.tools/python3"
+
+if [[ ! -x "$gcloud_bin" ]]; then
+  echo "Google Cloud CLI is not installed at $gcloud_bin" >&2
+  echo "Follow the official archive instructions linked from the root README." >&2
+  exit 1
+fi
+
+if [[ -x "$python_bin" ]]; then
+  export CLOUDSDK_PYTHON="$python_bin"
+fi
+
+exec "$gcloud_bin" "$@"

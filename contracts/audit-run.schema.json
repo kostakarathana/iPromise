@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ipromise.dev/contracts/audit-run.schema.json",
+  "title": "iPromise AuditRun",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "mode",
+    "status",
+    "verdict",
+    "startedAt",
+    "updatedAt",
+    "claim",
+    "evidence",
+    "events",
+    "actions",
+    "runtime",
+    "idempotencyKey"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 8 },
+    "mode": {
+      "type": "string",
+      "enum": ["cloud", "local", "demonstration"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "RECEIVED",
+        "CAPTURING",
+        "COMPILING",
+        "BINDING",
+        "PROBING",
+        "EVALUATING",
+        "REMEDIATING",
+        "VERIFYING",
+        "ROUTING_ACTION",
+        "COMPLETE",
+        "FAILED_RETRYABLE",
+        "FAILED_SAFE"
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PENDING", "SUPPORTED", "CONTRADICTED", "INCONCLUSIVE", "NOT_TESTED"]
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "claim": { "$ref": "#/$defs/claim" },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "remediation": {
+      "anyOf": [
+        { "$ref": "#/$defs/remediation" },
+        { "type": "null" }
+      ]
+    },
+    "verification": {
+      "anyOf": [
+        { "$ref": "#/$defs/verification" },
+        { "type": "null" }
+      ]
+    },
+    "repository": {
+      "anyOf": [
+        { "$ref": "#/$defs/repository" },
+        { "type": "null" }
+      ]
+    },
+    "idempotencyKey": { "type": "string", "minLength": 8 },
+    "syntheticFixtureId": { "type": ["string", "null"] },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exactQuote",
+        "sourceUrl",
+        "sourceTitle",
+        "capturedAt",
+        "contentHash",
+        "testability",
+        "controlId"
+      ],
+      "properties": {
+        "exactQuote": { "type": "string", "minLength": 1 },
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "sourceTitle": { "type": "string" },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "contentHash": { "type": "string" },
+        "actor": { "type": ["string", "null"] },
+        "action": { "type": ["string", "null"] },
+        "object": { "type": ["string", "null"] },
+        "deadlineHours": { "type": ["integer", "null"], "minimum": 0 },
+        "qualifiers": { "type": "array", "items": { "type": "string" } },
+        "testability": {
+          "type": "string",
+          "enum": ["EXECUTABLE", "PARTIAL", "NOT_TESTABLE"]
+        },
+        "controlId": { "type": ["string", "null"] }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "expected", "observed", "result"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "expected": { "type": "string" },
+        "observed": { "type": "string" },
+        "result": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "UNKNOWN"]
+        },
+        "scope": { "type": ["string", "null"] },
+        "artifactRef": { "type": ["string", "null"] }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "stage", "state", "title", "at"],
+      "properties": {
+        "id": { "type": "string" },
+        "stage": { "type": "string" },
+        "state": {
+          "type": "string",
+          "enum": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "SKIPPED"]
+        },
+        "title": { "type": "string" },
+        "detail": { "type": ["string", "null"] },
+        "at": { "type": "string", "format": "date-time" },
+        "system": { "type": ["string", "null"] },
+        "artifactRef": { "type": ["string", "null"] }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "state", "title", "verified"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string", "enum": ["pull_request", "issue", "email"] },
+        "state": {
+          "type": "string",
+          "enum": ["PLANNED", "BLOCKED", "READY", "OPENED", "SENT", "SKIPPED"]
+        },
+        "title": { "type": "string" },
+        "reason": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"], "format": "uri" },
+        "verified": { "type": "boolean" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentFramework",
+        "modelInvocationAttempted",
+        "modelInvoked",
+        "executionTarget"
+      ],
+      "properties": {
+        "agentFramework": { "type": "string" },
+        "modelInvocationAttempted": { "type": "boolean" },
+        "modelInvoked": { "type": "boolean" },
+        "model": { "type": ["string", "null"] },
+        "executionTarget": { "type": "string" },
+        "cloudRunRevision": { "type": ["string", "null"] }
+      }
+    },
+    "fileEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operation", "rationale", "contentPreview"],
+      "properties": {
+        "path": { "type": "string" },
+        "operation": { "type": "string" },
+        "rationale": { "type": "string" },
+        "contentPreview": { "type": "string" }
+      }
+    },
+    "remediation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "baseReference", "edits", "generatedBy"],
+      "properties": {
+        "summary": { "type": "string" },
+        "baseReference": { "type": "string" },
+        "edits": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fileEdit" }
+        },
+        "generatedBy": { "type": "string" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verifier",
+        "baselineControl",
+        "candidateControl",
+        "regressionSuite",
+        "exactTreeVerified",
+        "isolated",
+        "publishable",
+        "detail"
+      ],
+      "properties": {
+        "verifier": { "type": "string" },
+        "baselineControl": { "type": "string", "enum": ["PASS", "FAIL", "NOT_RUN"] },
+        "candidateControl": { "type": "string", "enum": ["PASS", "FAIL", "NOT_RUN"] },
+        "regressionSuite": { "type": "string", "enum": ["PASS", "FAIL", "NOT_RUN"] },
+        "exactTreeVerified": { "type": "boolean" },
+        "isolated": { "type": "boolean" },
+        "publishable": { "type": "boolean" },
+        "detail": { "type": "string" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fullName", "defaultBranch", "private", "archived", "htmlUrl"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "fullName": { "type": "string", "minLength": 3 },
+        "defaultBranch": { "type": "string", "minLength": 1 },
+        "private": { "type": "boolean" },
+        "archived": { "type": "boolean" },
+        "htmlUrl": { "type": "string", "format": "uri" }
+      }
+    }
+  }
+}

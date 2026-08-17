@@ -1,0 +1,525 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_dir="$(cd "$script_dir/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/deploy-cloud-run --plan | --apply
+
+Deploys the minimum truthful iPromise Cloud Run slice:
+  - synthetic reference SaaS
+  - Google ADK + Gemini agent
+  - judge-facing console
+
+Required environment:
+  IPROMISE_GCP_PROJECT       Explicit Google Cloud project ID
+  IPROMISE_GITHUB_APP_ID     GitHub App numeric ID (not a secret)
+  IPROMISE_GITHUB_APP_SLUG   GitHub App URL slug (not a secret)
+  IPROMISE_GITHUB_APP_CLIENT_ID
+                             GitHub App OAuth client ID (not a secret)
+
+Required only for --apply:
+  IPROMISE_DEPLOY_CONFIRM   Must exactly equal IPROMISE_GCP_PROJECT
+
+Optional environment:
+  IPROMISE_GCP_REGION              default: us-central1
+  IPROMISE_GCP_LOCATION            default: IPROMISE_GCP_REGION
+  IPROMISE_GEMINI_MODEL            default: gemini-3.5-flash
+  IPROMISE_GITHUB_ACTIONS_ENABLED  default: false
+  IPROMISE_SCHEDULE                default: 0 */6 * * *
+  IPROMISE_CONSOLE_BASE_URL        default: deployed console URL
+  IPROMISE_DEMO_TOKEN_SECRET       default: ipromise-demo-token
+  IPROMISE_AGENT_TOKEN_SECRET      default: ipromise-agent-api-token
+  IPROMISE_CONSOLE_ACCESS_SECRET   default: ipromise-console-access-code
+  IPROMISE_GITHUB_CLIENT_SECRET_SECRET
+                                      default: ipromise-github-client-secret
+  IPROMISE_GITHUB_PRIVATE_KEY_SECRET
+                                      default: ipromise-github-private-key
+  IPROMISE_DEMO_SERVICE            default: ipromise-demo-saas
+  IPROMISE_AGENT_SERVICE           default: ipromise-agent
+  IPROMISE_CONSOLE_SERVICE         default: ipromise-console
+
+--plan performs authenticated read-only preflight checks and prints the resource
+target. --apply is the only mutating mode and refuses to run without the project
+confirmation guard. The demo token, agent token, console access code, GitHub
+client secret, and GitHub private key must exist as enabled Secret Manager
+versions before --apply. Apply resolves the newest enabled numeric version of
+each secret once and pins that version into the deployed revisions. This script
+refuses those five payloads as process environment variables and never accepts or
+prints their values.
+EOF
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+mode="${1:-}"
+case "$mode" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  --plan|--apply)
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+project="${IPROMISE_GCP_PROJECT:-}"
+region="${IPROMISE_GCP_REGION:-us-central1}"
+location="${IPROMISE_GCP_LOCATION:-$region}"
+gemini_model="${IPROMISE_GEMINI_MODEL:-gemini-3.5-flash}"
+github_actions_enabled="${IPROMISE_GITHUB_ACTIONS_ENABLED:-false}"
+github_app_id="${IPROMISE_GITHUB_APP_ID:-}"
+github_app_slug="${IPROMISE_GITHUB_APP_SLUG:-}"
+github_app_client_id="${IPROMISE_GITHUB_APP_CLIENT_ID:-}"
+console_base_url="${IPROMISE_CONSOLE_BASE_URL:-}"
+demo_secret="${IPROMISE_DEMO_TOKEN_SECRET:-ipromise-demo-token}"
+agent_secret="${IPROMISE_AGENT_TOKEN_SECRET:-ipromise-agent-api-token}"
+console_access_secret="${IPROMISE_CONSOLE_ACCESS_SECRET:-ipromise-console-access-code}"
+github_client_secret="${IPROMISE_GITHUB_CLIENT_SECRET_SECRET:-ipromise-github-client-secret}"
+github_private_key_secret="${IPROMISE_GITHUB_PRIVATE_KEY_SECRET:-ipromise-github-private-key}"
+demo_service="${IPROMISE_DEMO_SERVICE:-ipromise-demo-saas}"
+agent_service="${IPROMISE_AGENT_SERVICE:-ipromise-agent}"
+console_service="${IPROMISE_CONSOLE_SERVICE:-ipromise-console}"
+scheduler_job="${IPROMISE_SCHEDULER_JOB:-ipromise-six-hour-audit}"
+schedule="${IPROMISE_SCHEDULE:-0 */6 * * *}"
+
+demo_sa_id="ipromise-demo"
+agent_sa_id="ipromise-agent"
+console_sa_id="ipromise-console"
+scheduler_sa_id="ipromise-scheduler"
+build_sa_id="ipromise-builder"
+
+[[ -z "${IPROMISE_DEMO_TOKEN:-}" ]] \
+  || die "unset IPROMISE_DEMO_TOKEN; provide it only through Secret Manager"
+[[ -z "${IPROMISE_AGENT_API_TOKEN:-}" ]] \
+  || die "unset IPROMISE_AGENT_API_TOKEN; provide it only through Secret Manager"
+[[ -z "${IPROMISE_CONSOLE_ACCESS_TOKEN:-}" ]] \
+  || die "unset IPROMISE_CONSOLE_ACCESS_TOKEN; provide it only through Secret Manager"
+[[ -z "${IPROMISE_GITHUB_APP_CLIENT_SECRET:-}" ]] \
+  || die "unset IPROMISE_GITHUB_APP_CLIENT_SECRET; provide it only through Secret Manager"
+[[ -z "${IPROMISE_GITHUB_APP_PRIVATE_KEY:-}" ]] \
+  || die "unset IPROMISE_GITHUB_APP_PRIVATE_KEY; provide it only through Secret Manager"
+
+[[ -n "$project" ]] || die "IPROMISE_GCP_PROJECT is required"
+[[ -n "$github_app_id" ]] || die "IPROMISE_GITHUB_APP_ID is required"
+[[ -n "$github_app_slug" ]] || die "IPROMISE_GITHUB_APP_SLUG is required"
+[[ -n "$github_app_client_id" ]] || die "IPROMISE_GITHUB_APP_CLIENT_ID is required"
+[[ "$project" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] \
+  || die "IPROMISE_GCP_PROJECT is not a valid project ID"
+[[ "$region" =~ ^[a-z]+-[a-z]+[0-9]$ ]] \
+  || die "IPROMISE_GCP_REGION is not a valid region"
+[[ "$location" =~ ^[a-z]+-[a-z]+[0-9]$ ]] \
+  || die "IPROMISE_GCP_LOCATION is not a valid regional Vertex AI location"
+[[ "$gemini_model" =~ ^[A-Za-z0-9._/-]+$ ]] \
+  || die "IPROMISE_GEMINI_MODEL contains unsupported characters"
+[[ "$github_actions_enabled" =~ ^(true|false)$ ]] \
+  || die "IPROMISE_GITHUB_ACTIONS_ENABLED must be true or false"
+[[ "$github_app_id" =~ ^[0-9]+$ ]] \
+  || die "IPROMISE_GITHUB_APP_ID must be numeric"
+[[ "$github_app_slug" =~ ^[A-Za-z0-9-]+$ ]] \
+  || die "IPROMISE_GITHUB_APP_SLUG contains unsupported characters"
+[[ "$github_app_client_id" =~ ^[A-Za-z0-9._-]+$ ]] \
+  || die "IPROMISE_GITHUB_APP_CLIENT_ID contains unsupported characters"
+if [[ -n "$console_base_url" ]]; then
+  console_base_url="${console_base_url%/}"
+  console_authority="${console_base_url#https://}"
+  [[ "$console_base_url" == https://* && \
+     -n "$console_authority" && \
+     "$console_authority" != */* && \
+     "$console_authority" != *@* && \
+     "$console_authority" != *\?* && \
+     "$console_authority" != *\#* && \
+     "$console_authority" != *[[:space:],]* ]] \
+    || die "IPROMISE_CONSOLE_BASE_URL must be an HTTPS origin without credentials, path, query, fragment, spaces, or commas"
+fi
+
+for service_name in "$demo_service" "$agent_service" "$console_service"; do
+  [[ "$service_name" =~ ^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$ ]] \
+    || die "invalid Cloud Run service name: $service_name"
+done
+
+secret_names=(
+  "$demo_secret"
+  "$agent_secret"
+  "$console_access_secret"
+  "$github_client_secret"
+  "$github_private_key_secret"
+)
+for secret_name in "${secret_names[@]}"; do
+  [[ "$secret_name" =~ ^[A-Za-z0-9_-]+$ ]] \
+    || die "invalid Secret Manager secret ID: $secret_name"
+done
+for ((i = 0; i < ${#secret_names[@]}; i++)); do
+  for ((j = i + 1; j < ${#secret_names[@]}; j++)); do
+    [[ "${secret_names[$i]}" != "${secret_names[$j]}" ]] \
+      || die "Secret Manager secret IDs must be distinct: ${secret_names[$i]}"
+  done
+done
+
+if [[ -x "$repo_dir/.tools/google-cloud-sdk/bin/gcloud" ]]; then
+  gcloud_cmd=("$repo_dir/scripts/gcloud")
+elif command -v gcloud >/dev/null 2>&1; then
+  gcloud_cmd=(gcloud)
+else
+  die "gcloud was not found; install the Google Cloud CLI first"
+fi
+
+verify_source_upload() {
+  local source_dir="$1"
+  local label="$2"
+  local manifest
+  local path
+
+  manifest="$(
+    cd "$source_dir"
+    "${gcloud_cmd[@]}" meta list-files-for-upload
+  )" || die "could not inspect the $label Cloud Build source manifest"
+  [[ -n "$manifest" ]] || die "$label Cloud Build source manifest is empty"
+
+  while IFS= read -r path; do
+    path="${path#./}"
+    case "$path" in
+      .env*|*/.env*|*.pem|*.key|\
+      .git|.git/*|*/.git/*|node_modules|node_modules/*|*/node_modules/*|\
+      .next|.next/*|*/.next/*|.venv|.venv/*|*/.venv/*|\
+      tests|tests/*|*/tests/*|coverage|coverage/*|*/coverage/*)
+        die "$label source manifest includes a forbidden local path: $path"
+        ;;
+    esac
+  done <<< "$manifest"
+}
+
+# `gcloud run deploy --source` uses .gcloudignore, not Docker's ignore file.
+# Inspect the exact upload manifests before even performing authenticated
+# project checks so a local secret cannot silently enter a Cloud Build context.
+verify_source_upload "$repo_dir/apps/demo_saas" "synthetic SaaS"
+verify_source_upload "$repo_dir/services/agent" "agent"
+verify_source_upload "$repo_dir/apps/console" "console"
+
+git_sha=""
+if [[ "$mode" == "--apply" ]]; then
+  [[ "${IPROMISE_DEPLOY_CONFIRM:-}" == "$project" ]] \
+    || die "refusing mutation: IPROMISE_DEPLOY_CONFIRM must exactly equal $project"
+  git_sha="$(git -C "$repo_dir" rev-parse --verify HEAD 2>/dev/null)" \
+    || die "the repository has no commit to identify this deployment"
+  [[ -z "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]] \
+    || die "refusing to deploy a dirty working tree; commit the exact reviewed source first"
+  [[ "$git_sha" =~ ^[0-9a-f]{40}$ ]] \
+    || die "could not resolve a full source commit SHA"
+fi
+
+active_account="$("${gcloud_cmd[@]}" auth list \
+  --filter='status:ACTIVE' --limit=1 --format='value(account)')"
+[[ -n "$active_account" ]] || die "no active gcloud account; run gcloud auth login"
+
+"${gcloud_cmd[@]}" projects describe "$project" \
+  --format='value(projectId)' >/dev/null \
+  || die "project $project is unavailable to $active_account"
+
+printf 'iPromise Cloud Run target\n'
+printf '  mode:       %s\n' "$mode"
+printf '  account:    %s\n' "$active_account"
+printf '  project:    %s\n' "$project"
+printf '  region:     %s\n' "$region"
+printf '  model:      %s\n' "$gemini_model"
+printf '  GitHub App: %s (%s; actions %s)\n' \
+  "$github_app_slug" "$github_app_id" "$github_actions_enabled"
+printf '  services:   %s, %s, %s\n' \
+  "$demo_service" "$agent_service" "$console_service"
+printf '  build SA:   %s@%s.iam.gserviceaccount.com\n' "$build_sa_id" "$project"
+printf '  secrets:    %s, %s, %s, %s, %s (values are never read or printed)\n' \
+  "$demo_secret" "$agent_secret" "$console_access_secret" \
+  "$github_client_secret" "$github_private_key_secret"
+
+if [[ "$mode" == "--plan" ]]; then
+  printf '\nPlan only: no resources were changed.\n'
+  printf 'Run again with --apply and IPROMISE_DEPLOY_CONFIRM=%s after reviewing docs/deployment.md.\n' \
+    "$project"
+  exit 0
+fi
+
+printf '\nEnabling the minimum Google Cloud APIs...\n'
+"${gcloud_cmd[@]}" services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  secretmanager.googleapis.com \
+  aiplatform.googleapis.com \
+  iam.googleapis.com \
+  firestore.googleapis.com \
+  cloudscheduler.googleapis.com \
+  --project "$project" --quiet
+
+resolve_secret_version() {
+  local secret_name="$1"
+  local version
+  "${gcloud_cmd[@]}" secrets describe "$secret_name" \
+    --project "$project" --format='value(name)' >/dev/null \
+    || die "missing secret $secret_name; create it and add an enabled version before retrying"
+  version="$("${gcloud_cmd[@]}" secrets versions list "$secret_name" \
+    --project "$project" \
+    --filter='state=ENABLED' \
+    --sort-by='~createTime' \
+    --format='value(name)' \
+    --limit=1)"
+  version="${version##*/}"
+  [[ "$version" =~ ^[0-9]+$ ]] \
+    || die "secret $secret_name has no enabled numeric version"
+  printf '%s' "$version"
+}
+
+demo_secret_version="$(resolve_secret_version "$demo_secret")"
+agent_secret_version="$(resolve_secret_version "$agent_secret")"
+console_access_secret_version="$(resolve_secret_version "$console_access_secret")"
+github_client_secret_version="$(resolve_secret_version "$github_client_secret")"
+github_private_key_secret_version="$(resolve_secret_version "$github_private_key_secret")"
+
+printf 'Pinned Secret Manager versions (payloads remain unread):\n'
+printf '  %s:%s\n' "$demo_secret" "$demo_secret_version"
+printf '  %s:%s\n' "$agent_secret" "$agent_secret_version"
+printf '  %s:%s\n' "$console_access_secret" "$console_access_secret_version"
+printf '  %s:%s\n' "$github_client_secret" "$github_client_secret_version"
+printf '  %s:%s\n' "$github_private_key_secret" "$github_private_key_secret_version"
+
+ensure_service_account() {
+  local account_id="$1"
+  local display_name="$2"
+  if ! "${gcloud_cmd[@]}" iam service-accounts describe \
+    "$account_id@$project.iam.gserviceaccount.com" \
+    --project "$project" --format='value(email)' >/dev/null 2>&1; then
+    "${gcloud_cmd[@]}" iam service-accounts create "$account_id" \
+      --project "$project" --display-name "$display_name" --quiet
+  fi
+}
+
+ensure_service_account "$demo_sa_id" "iPromise synthetic SaaS runtime"
+ensure_service_account "$agent_sa_id" "iPromise ADK agent runtime"
+ensure_service_account "$console_sa_id" "iPromise judge console runtime"
+ensure_service_account "$scheduler_sa_id" "iPromise scheduled audit trigger"
+ensure_service_account "$build_sa_id" "iPromise Cloud Run source builder"
+
+demo_sa="$demo_sa_id@$project.iam.gserviceaccount.com"
+agent_sa="$agent_sa_id@$project.iam.gserviceaccount.com"
+console_sa="$console_sa_id@$project.iam.gserviceaccount.com"
+scheduler_sa="$scheduler_sa_id@$project.iam.gserviceaccount.com"
+build_sa="$build_sa_id@$project.iam.gserviceaccount.com"
+build_sa_resource="projects/$project/serviceAccounts/$build_sa"
+
+"${gcloud_cmd[@]}" projects add-iam-policy-binding "$project" \
+  --member "serviceAccount:$agent_sa" \
+  --role roles/aiplatform.user \
+  --condition=None --quiet >/dev/null
+"${gcloud_cmd[@]}" projects add-iam-policy-binding "$project" \
+  --member "serviceAccount:$agent_sa" \
+  --role roles/datastore.user \
+  --condition=None --quiet >/dev/null
+"${gcloud_cmd[@]}" projects add-iam-policy-binding "$project" \
+  --member "serviceAccount:$build_sa" \
+  --role roles/run.builder \
+  --condition=None --quiet >/dev/null
+
+firestore_type="$("${gcloud_cmd[@]}" firestore databases describe \
+  --database='(default)' --project "$project" \
+  --format='value(type)' 2>/dev/null || true)"
+if [[ -z "$firestore_type" ]]; then
+  "${gcloud_cmd[@]}" firestore databases create \
+    --database='(default)' \
+    --project "$project" \
+    --location "$region" \
+    --type firestore-native \
+    --quiet
+elif [[ "$firestore_type" != "FIRESTORE_NATIVE" ]]; then
+  die "the (default) database is $firestore_type, not Firestore Native mode; use a project with a native-mode database"
+else
+  firestore_location="$("${gcloud_cmd[@]}" firestore databases describe \
+    --database='(default)' --project "$project" \
+    --format='value(locationId)')"
+  printf 'Using existing Firestore Native database in %s.\n' \
+    "${firestore_location:-an unspecified location}"
+fi
+
+"${gcloud_cmd[@]}" secrets add-iam-policy-binding "$demo_secret" \
+  --project "$project" --member "serviceAccount:$demo_sa" \
+  --role roles/secretmanager.secretAccessor --quiet >/dev/null
+"${gcloud_cmd[@]}" secrets add-iam-policy-binding "$demo_secret" \
+  --project "$project" --member "serviceAccount:$agent_sa" \
+  --role roles/secretmanager.secretAccessor --quiet >/dev/null
+"${gcloud_cmd[@]}" secrets add-iam-policy-binding "$agent_secret" \
+  --project "$project" --member "serviceAccount:$agent_sa" \
+  --role roles/secretmanager.secretAccessor --quiet >/dev/null
+"${gcloud_cmd[@]}" secrets add-iam-policy-binding "$agent_secret" \
+  --project "$project" --member "serviceAccount:$console_sa" \
+  --role roles/secretmanager.secretAccessor --quiet >/dev/null
+"${gcloud_cmd[@]}" secrets add-iam-policy-binding "$console_access_secret" \
+  --project "$project" --member "serviceAccount:$console_sa" \
+  --role roles/secretmanager.secretAccessor --quiet >/dev/null
+"${gcloud_cmd[@]}" secrets add-iam-policy-binding "$github_client_secret" \
+  --project "$project" --member "serviceAccount:$agent_sa" \
+  --role roles/secretmanager.secretAccessor --quiet >/dev/null
+"${gcloud_cmd[@]}" secrets add-iam-policy-binding "$github_private_key_secret" \
+  --project "$project" --member "serviceAccount:$agent_sa" \
+  --role roles/secretmanager.secretAccessor --quiet >/dev/null
+
+if ! "${gcloud_cmd[@]}" artifacts repositories describe cloud-run-source-deploy \
+  --project "$project" --location "$region" \
+  --format='value(name)' >/dev/null 2>&1; then
+  "${gcloud_cmd[@]}" artifacts repositories create cloud-run-source-deploy \
+    --project "$project" --location "$region" \
+    --repository-format docker \
+    --description "Cloud Run source images for iPromise" --quiet
+fi
+
+common_run_flags=(
+  --project "$project"
+  --region "$region"
+  --execution-environment gen2
+  --port 8080
+  --cpu 1
+  --labels "app=ipromise,managed-by=ipromise-deploy,source-commit=$git_sha"
+  --quiet
+)
+
+printf '\nDeploying the synthetic reference SaaS...\n'
+"${gcloud_cmd[@]}" run deploy "$demo_service" \
+  --source "$repo_dir/apps/demo_saas" \
+  --build-service-account "$build_sa_resource" \
+  --service-account "$demo_sa" \
+  --memory 512Mi \
+  --timeout 60s \
+  --min-instances 0 \
+  --max-instances 1 \
+  --concurrency 20 \
+  --allow-unauthenticated \
+  --set-env-vars 'IPROMISE_DEMO_ENV=cloud' \
+  --set-secrets "IPROMISE_DEMO_TOKEN=$demo_secret:$demo_secret_version" \
+  "${common_run_flags[@]}"
+
+demo_url="$("${gcloud_cmd[@]}" run services describe "$demo_service" \
+  --project "$project" --region "$region" --format='value(status.url)')"
+[[ "$demo_url" == https://* ]] || die "the synthetic SaaS did not return a Cloud Run URL"
+
+# Reuse stable service URLs on subsequent deployments so the agent can receive
+# its complete GitHub and Scheduler configuration in a single revision. A first
+# deployment still needs a two-phase bootstrap because neither URL exists yet.
+existing_agent_url="$("${gcloud_cmd[@]}" run services describe "$agent_service" \
+  --project "$project" --region "$region" --format='value(status.url)' \
+  2>/dev/null || true)"
+existing_console_url="$("${gcloud_cmd[@]}" run services describe "$console_service" \
+  --project "$project" --region "$region" --format='value(status.url)' \
+  2>/dev/null || true)"
+if [[ -z "$console_base_url" && "$existing_console_url" == https://* ]]; then
+  console_base_url="$existing_console_url"
+fi
+if [[ "$existing_agent_url" == https://* && -z "$console_base_url" ]]; then
+  die "an existing agent was found but no console origin could be resolved; set IPROMISE_CONSOLE_BASE_URL rather than deploying a revision with stripped GitHub/Scheduler configuration"
+fi
+
+agent_base_env="IPROMISE_MODE=cloud,IPROMISE_COMPILER=adk,IPROMISE_STATE_BACKEND=firestore,IPROMISE_FIRESTORE_DATABASE=(default),GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$project,GOOGLE_CLOUD_LOCATION=$location,IPROMISE_GEMINI_MODEL=$gemini_model,IPROMISE_DEMO_BASE_URL=$demo_url,IPROMISE_EXECUTION_TARGET=cloud-run"
+agent_base_secrets="IPROMISE_DEMO_TOKEN=$demo_secret:$demo_secret_version,IPROMISE_AGENT_API_TOKEN=$agent_secret:$agent_secret_version"
+agent_needs_activation=true
+agent_deploy_env="$agent_base_env"
+agent_deploy_secrets="$agent_base_secrets"
+if [[ -n "$console_base_url" && "$existing_agent_url" == https://* ]]; then
+  agent_deploy_env="$agent_base_env,IPROMISE_GITHUB_ACTIONS_ENABLED=$github_actions_enabled,IPROMISE_GITHUB_APP_ID=$github_app_id,IPROMISE_GITHUB_APP_SLUG=$github_app_slug,IPROMISE_GITHUB_APP_CLIENT_ID=$github_app_client_id,IPROMISE_CONSOLE_BASE_URL=$console_base_url,IPROMISE_GOOGLE_OIDC_AUDIENCE=$existing_agent_url,IPROMISE_SCHEDULER_SERVICE_ACCOUNT=$scheduler_sa"
+  agent_deploy_secrets="$agent_base_secrets,IPROMISE_GITHUB_APP_CLIENT_SECRET=$github_client_secret:$github_client_secret_version,IPROMISE_GITHUB_APP_PRIVATE_KEY=$github_private_key_secret:$github_private_key_secret_version"
+  agent_needs_activation=false
+fi
+
+printf '\nDeploying the Google ADK agent...\n'
+"${gcloud_cmd[@]}" run deploy "$agent_service" \
+  --source "$repo_dir/services/agent" \
+  --build-service-account "$build_sa_resource" \
+  --service-account "$agent_sa" \
+  --memory 1Gi \
+  --timeout 300s \
+  --min-instances 0 \
+  --max-instances 1 \
+  --concurrency 10 \
+  --allow-unauthenticated \
+  --set-env-vars "$agent_deploy_env" \
+  --set-secrets "$agent_deploy_secrets" \
+  "${common_run_flags[@]}"
+
+agent_url="$("${gcloud_cmd[@]}" run services describe "$agent_service" \
+  --project "$project" --region "$region" --format='value(status.url)')"
+[[ "$agent_url" == https://* ]] || die "the agent did not return a Cloud Run URL"
+
+printf '\nDeploying the judge console...\n'
+"${gcloud_cmd[@]}" run deploy "$console_service" \
+  --source "$repo_dir/apps/console" \
+  --build-service-account "$build_sa_resource" \
+  --service-account "$console_sa" \
+  --memory 512Mi \
+  --timeout 300s \
+  --min-instances 0 \
+  --max-instances 2 \
+  --concurrency 40 \
+  --allow-unauthenticated \
+  --set-env-vars "IPROMISE_AGENT_URL=$agent_url" \
+  --set-secrets "IPROMISE_AGENT_TOKEN=$agent_secret:$agent_secret_version,IPROMISE_CONSOLE_ACCESS_TOKEN=$console_access_secret:$console_access_secret_version" \
+  "${common_run_flags[@]}"
+
+console_url="$("${gcloud_cmd[@]}" run services describe "$console_service" \
+  --project "$project" --region "$region" --format='value(status.url)')"
+[[ "$console_url" == https://* ]] || die "the console did not return a Cloud Run URL"
+
+if [[ -z "$console_base_url" ]]; then
+  console_base_url="$console_url"
+fi
+
+if [[ "$agent_needs_activation" == true ]]; then
+  printf '\nActivating the GitHub App configuration on the bootstrapped agent...\n'
+  "${gcloud_cmd[@]}" run services update "$agent_service" \
+    --project "$project" \
+    --region "$region" \
+    --set-env-vars "$agent_base_env,IPROMISE_GITHUB_ACTIONS_ENABLED=$github_actions_enabled,IPROMISE_GITHUB_APP_ID=$github_app_id,IPROMISE_GITHUB_APP_SLUG=$github_app_slug,IPROMISE_GITHUB_APP_CLIENT_ID=$github_app_client_id,IPROMISE_CONSOLE_BASE_URL=$console_base_url,IPROMISE_GOOGLE_OIDC_AUDIENCE=$agent_url,IPROMISE_SCHEDULER_SERVICE_ACCOUNT=$scheduler_sa" \
+    --set-secrets "$agent_base_secrets,IPROMISE_GITHUB_APP_CLIENT_SECRET=$github_client_secret:$github_client_secret_version,IPROMISE_GITHUB_APP_PRIVATE_KEY=$github_private_key_secret:$github_private_key_secret_version" \
+    --quiet
+else
+  printf '\nAgent deployed once with its complete GitHub and Scheduler configuration.\n'
+fi
+
+printf '\nConfiguring the six-hour autonomous trigger...\n'
+scheduler_args=(
+  --project "$project"
+  --location "$region"
+  --schedule "$schedule"
+  --time-zone UTC
+  --uri "$agent_url/v1/triggers/scheduled"
+  --http-method POST
+  --oidc-service-account-email "$scheduler_sa"
+  --oidc-token-audience "$agent_url"
+  --attempt-deadline 300s
+  --max-retry-attempts=2
+  --max-retry-duration=1800s
+  --min-backoff=300s
+  --max-backoff=600s
+  --max-doublings=1
+  --quiet
+)
+if "${gcloud_cmd[@]}" scheduler jobs describe "$scheduler_job" \
+  --project "$project" --location "$region" \
+  --format='value(name)' >/dev/null 2>&1; then
+  "${gcloud_cmd[@]}" scheduler jobs update http "$scheduler_job" \
+    "${scheduler_args[@]}"
+else
+  "${gcloud_cmd[@]}" scheduler jobs create http "$scheduler_job" \
+    "${scheduler_args[@]}"
+fi
+
+printf '\nDeployment commands completed. This is not yet end-to-end proof.\n'
+printf '  console:    %s\n' "$console_url"
+printf '  agent:      %s\n' "$agent_url"
+printf '  synthetic:  %s\n' "$demo_url"
+printf '  GitHub setup:    %s/api/integrations/github/setup\n' "$console_base_url"
+printf '  GitHub callback: %s/api/integrations/github/callback\n' "$console_base_url"
+printf '  scheduler:  %s (%s UTC)\n' "$scheduler_job" "$schedule"
+printf '\nRun the verification and evidence-capture steps in docs/deployment.md before claiming cloud, model, or action proof.\n'

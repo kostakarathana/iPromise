@@ -1,0 +1,77 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+demo_pid=""
+agent_pid=""
+console_pid=""
+
+cleanup_ipromise_processes() {
+  for process_id in "$console_pid" "$agent_pid" "$demo_pid"; do
+    if [ -n "$process_id" ]; then
+      kill "$process_id" 2>/dev/null || true
+    fi
+  done
+}
+
+wait_for_service() {
+  service_url=$1
+  expected_text=$2
+  attempts=0
+  while [ "$attempts" -lt 80 ]; do
+    if curl --fail --silent "$service_url" | grep -q "$expected_text"; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+trap cleanup_ipromise_processes EXIT INT TERM
+cd "$repo_root"
+
+command -v uv >/dev/null 2>&1 || {
+  echo "uv is required: https://docs.astral.sh/uv/" >&2
+  exit 1
+}
+command -v pnpm >/dev/null 2>&1 || {
+  echo "pnpm 11 is required: https://pnpm.io/installation" >&2
+  exit 1
+}
+
+demo_token=${IPROMISE_DEMO_TOKEN:-local-synthetic-only-change-me}
+
+IPROMISE_DEMO_ENV=local \
+IPROMISE_DEMO_TOKEN="$demo_token" \
+  uv run --project apps/demo_saas uvicorn ipromise_demo.app:app \
+    --host 127.0.0.1 --port 8081 &
+demo_pid=$!
+
+if ! wait_for_service "http://127.0.0.1:8081/healthz" "ipromise-synthetic-reference"; then
+  echo "The synthetic reference service did not become healthy on port 8081." >&2
+  exit 1
+fi
+
+IPROMISE_MODE=demonstration \
+IPROMISE_COMPILER=deterministic \
+IPROMISE_DEMO_BASE_URL=http://127.0.0.1:8081 \
+IPROMISE_DEMO_TOKEN="$demo_token" \
+IPROMISE_EXECUTION_TARGET=local-process \
+  uv run --project services/agent uvicorn ipromise_agent.app:app \
+    --host 127.0.0.1 --port 8080 &
+agent_pid=$!
+
+if ! wait_for_service "http://127.0.0.1:8080/healthz" "ipromise-agent"; then
+  echo "The audit agent did not become healthy on port 8080." >&2
+  exit 1
+fi
+
+IPROMISE_AGENT_URL=http://127.0.0.1:8080 \
+PORT=3000 \
+  pnpm --dir apps/console dev &
+console_pid=$!
+
+echo "iPromise local MVP is starting at http://127.0.0.1:3000"
+echo "This is a local deterministic audit: no Gemini, cloud proof, or external action."
+wait "$console_pid"

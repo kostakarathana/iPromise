@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo_root"
+
+python3 scripts/validate_eval_fixtures.py
+bash -n scripts/deploy-cloud-run scripts/smoke-cloud
+uv sync --project apps/demo_saas --extra dev --locked
+uv sync --project services/agent --extra dev --extra google --extra github --locked
+uv run --project apps/demo_saas --extra dev pytest apps/demo_saas/tests
+uv run --project services/agent --extra dev --extra google --extra github pytest services/agent/tests
+pnpm install --frozen-lockfile
+pnpm --dir apps/console lint
+pnpm --dir apps/console typecheck
+pnpm --dir apps/console test
+pnpm --dir apps/console build
+scripts/smoke-console-package
+git diff --check

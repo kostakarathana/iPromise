@@ -1,0 +1,70 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+source_dir="$repo_root/apps/console"
+task_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ipromise-console-smoke.XXXXXX")
+case "$task_tmp" in
+  */ipromise-console-smoke.*) ;;
+  *) echo "Refusing unexpected temporary directory: $task_tmp" >&2; exit 1 ;;
+esac
+
+server_pid=""
+cleanup() {
+  if [ -n "$server_pid" ]; then
+    kill "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+  fi
+  rm -rf -- "$task_tmp"
+}
+trap cleanup EXIT HUP INT TERM
+
+# Reproduce the isolated source context used by `gcloud run deploy --source`.
+tar -C "$source_dir" \
+  --exclude='./.next' \
+  --exclude='./node_modules' \
+  --exclude='./coverage' \
+  --exclude='./*.tsbuildinfo' \
+  -cf - . | tar -C "$task_tmp" -xf -
+
+cd "$task_tmp"
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm build
+
+test -f .next/standalone/server.js
+test -f \
+  .next/standalone/node_modules/.pnpm/@swc+helpers@0.5.23/node_modules/@swc/helpers/esm/_interop_require_default.js
+
+cp -R public .next/standalone/public
+mkdir -p .next/standalone/.next
+cp -R .next/static .next/standalone/.next/static
+
+port=${IPROMISE_CONSOLE_SMOKE_PORT:-$((32000 + ($$ % 10000)))}
+IPROMISE_CONSOLE_ACCESS_TOKEN=12345678901234567890123456789012 \
+IPROMISE_AGENT_URL=https://agent.example.test \
+IPROMISE_AGENT_TOKEN=12345678901234567890123456789012 \
+K_SERVICE=ipromise-console-smoke \
+PORT="$port" \
+HOSTNAME=127.0.0.1 \
+node .next/standalone/server.js >server.log 2>&1 &
+server_pid=$!
+
+status=000
+attempt=0
+while [ "$attempt" -lt 20 ]; do
+  status=$(curl -s -o page.html -w '%{http_code}' \
+    "http://127.0.0.1:$port/" || true)
+  if [ "$status" != 000 ]; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 0.2
+done
+
+if [ "$status" != 200 ] || ! grep -q 'Access this build' page.html; then
+  echo "Standalone console package did not serve its protected entry page." >&2
+  sed -n '1,120p' server.log >&2
+  exit 1
+fi
+
+echo "standalone console package smoke passed"

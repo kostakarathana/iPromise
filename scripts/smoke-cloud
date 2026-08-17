@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/smoke-cloud https://CONSOLE_HOST
+
+Authenticates to the judge console, submits one audit twice with the same trigger
+key, then submits the unchanged finding under a distinct trigger key. It verifies
+one logical run for the replay and one reconciled GitHub issue across both runs.
+The access code is read without echo and is never placed in an argument,
+environment variable, or file.
+EOF
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+console_url="${1:-}"
+case "$console_url" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+esac
+
+[[ "$console_url" == https://* ]] \
+  || die "provide the deployed HTTPS console URL"
+[[ "$console_url" != *[[:space:],]* ]] \
+  || die "console URL must not contain spaces or commas"
+console_url="${console_url%/}"
+
+command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v python3 >/dev/null 2>&1 || die "python3 is required"
+
+smoke_dir="$(mktemp -d /tmp/ipromise-smoke.XXXXXX)"
+cookie_jar="$smoke_dir/cookies"
+first_json="$smoke_dir/first.json"
+second_json="$smoke_dir/second.json"
+third_json="$smoke_dir/third.json"
+cleanup() {
+  rm -f -- "$cookie_jar" "$first_json" "$second_json" "$third_json"
+  rmdir -- "$smoke_dir" 2>/dev/null || true
+}
+trap cleanup EXIT
+chmod 700 "$smoke_dir"
+
+printf 'Console access code: ' >&2
+IFS= read -r -s access_code
+printf '\n' >&2
+
+printf '%s' "$access_code" \
+  | python3 -c 'import json,sys; print(json.dumps({"accessCode": sys.stdin.read()}))' \
+  | curl --fail --silent --show-error \
+      --cookie-jar "$cookie_jar" \
+      --header 'Content-Type: application/json' \
+      --data-binary @- \
+      "$console_url/api/session" >/dev/null
+unset access_code
+
+idempotency_key="smoke:$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+new_trigger_key="smoke:$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+
+curl --fail --silent --show-error \
+  --cookie "$cookie_jar" \
+  --header "Idempotency-Key: $idempotency_key" \
+  --request POST \
+  "$console_url/api/audit" >"$first_json"
+
+curl --fail --silent --show-error \
+  --cookie "$cookie_jar" \
+  --header "Idempotency-Key: $idempotency_key" \
+  --request POST \
+  "$console_url/api/audit" >"$second_json"
+
+curl --fail --silent --show-error \
+  --cookie "$cookie_jar" \
+  --header "Idempotency-Key: $new_trigger_key" \
+  --request POST \
+  "$console_url/api/audit" >"$third_json"
+
+python3 - "$first_json" "$second_json" "$third_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as first_file:
+    first = json.load(first_file)
+with open(sys.argv[2], encoding="utf-8") as second_file:
+    second = json.load(second_file)
+with open(sys.argv[3], encoding="utf-8") as third_file:
+    third = json.load(third_file)
+
+if first.get("id") != second.get("id"):
+    raise SystemExit("idempotency failed: responses contain different run IDs")
+if any(run.get("status") != "COMPLETE" for run in (first, second, third)):
+    raise SystemExit("audit did not complete successfully")
+if first.get("id") == third.get("id"):
+    raise SystemExit("distinct trigger keys unexpectedly returned the same run")
+
+opened = [
+    action
+    for action in first.get("actions", [])
+    if action.get("state") == "OPENED" and action.get("url")
+]
+replayed = [
+    action
+    for action in second.get("actions", [])
+    if action.get("state") == "OPENED" and action.get("url")
+]
+next_occurrence = [
+    action
+    for action in third.get("actions", [])
+    if action.get("state") == "OPENED" and action.get("url")
+]
+if len(opened) != 1 or len(replayed) != 1 or len(next_occurrence) != 1:
+    raise SystemExit(
+        "expected one opened action; connect a repository and explicitly enable actions"
+    )
+if len({opened[0]["url"], replayed[0]["url"], next_occurrence[0]["url"]}) != 1:
+    raise SystemExit("reconciliation failed: unchanged finding returned another action")
+
+print(f"run:     {first['id']}")
+print(f"verdict: {first.get('verdict')}")
+print(f"action:  {opened[0]['url']}")
+print("replay:  same trigger returned the same run")
+print(f"next:    {third['id']} reconciled the same finding action")
+PY
