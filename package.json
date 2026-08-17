@@ -1,0 +1,15 @@
+{
+  "name": "ipromise",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "./scripts/dev-local",
+    "dev:console": "pnpm --dir apps/console dev",
+    "build:console": "pnpm --dir apps/console build",
+    "lint:console": "pnpm --dir apps/console lint",
+    "test:console": "pnpm --dir apps/console test",
+    "typecheck:console": "pnpm --dir apps/console typecheck",
+    "verify": "./scripts/verify"
+  }
+}

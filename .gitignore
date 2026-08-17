@@ -1,0 +1,39 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# JavaScript
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local runtime artifacts
+.ipromise/
+.tools/
+artifacts/
+tmp/
+*.log
+
+# IDE and operating system
+.DS_Store
+.idea/
+.vscode/
+
+# Infrastructure state
+.terraform/
+*.tfstate
+*.tfstate.*
