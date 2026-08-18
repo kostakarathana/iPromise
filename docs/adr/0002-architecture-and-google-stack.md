@@ -1,6 +1,6 @@
 # ADR 0002: Architecture and Google stack
 
-- Status: Accepted; minimum implemented, deployment evidence pending
+- Status: Accepted; actions-off Google Cloud baseline deployed, verifier/action evidence pending
 - Date: 2026-08-17
 
 ## Context

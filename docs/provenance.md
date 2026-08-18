@@ -52,16 +52,20 @@ their licenses and attribution requirements when the repository becomes public.
 
 ## External systems
 
-The local MVP includes a GitHub App connection, issue fallback, Cloud Build verifier
-adapter, and exact-byte draft-PR publisher, but no live Cloud Build or GitHub
-workflow receipt has yet been captured. Tests use controlled in-process gateways
-for those external APIs. The executable repair is locked to the public
+The deployed actions-off baseline has a correlated Cloud Run, Google ADK,
+Gemini 3.5 Flash, Firestore, Scheduler, and Cloud Logging receipt:
+`run_14a197bafd1d4a44a248e67320092d16`. The project also includes a GitHub App
+connection, issue fallback, Cloud Build verifier adapter, and exact-byte draft-PR
+publisher, but no live Cloud Build or GitHub workflow receipt has yet been
+captured. Tests use controlled in-process gateways for those external APIs. The
+executable repair is locked to the public
 entrant-owned iPromise repository and one exact two-file template; general
 repository repair is not claimed. The final submission may act only on an
 entrant-authorized installation, and both the verifier backend and GitHub action
 flag default off. Email is not implemented. Record the authorized demo repository
 and real receipts here before submission.
 
-Google Cloud runtime services and Gemini output will be generated for this entry.
-No project may be described as deployed, model-backed, or externally actioning
-until correlated receipts exist in the [evidence matrix](evidence-matrix.md).
+Google Cloud runtime services and Gemini output were generated for this entry
+against original synthetic data. No project may be described as externally
+actioning until a correlated Cloud Build and GitHub receipt exists in the
+[evidence matrix](evidence-matrix.md).

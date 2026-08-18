@@ -1,8 +1,9 @@
 # Devpost submission draft
 
 Status: **working copy — do not submit until every final gate below has a real
-receipt.** The verifier-to-PR path is verified only with local controlled gateways;
-cloud deployment remains pending. Last reviewed 2026-08-18 AEST.
+receipt.** The Cloud Run + ADK + Gemini + Firestore + Scheduler baseline is live;
+the verifier-to-PR path still has only local controlled-gateway proof. Last
+reviewed 2026-08-18 AEST.
 
 ## Listing fields
 
@@ -10,7 +11,7 @@ cloud deployment remains pending. Last reviewed 2026-08-18 AEST.
 - **Category:** Taskmaster
 - **Tagline:** Customer promises should behave like tests.
 - **Repository:** https://github.com/kostakarathana/iPromise
-- **Hosted application:** `[add verified Cloud Run console URL]`
+- **Hosted application:** https://ipromise-console-ipj6vqlg2q-uc.a.run.app
 - **Public video:** `[add public YouTube or Vimeo URL; maximum 4:00]`
 - **Private testing instructions:** `[add console access code only in Devpost's
   private field; never place it in public copy or the video]`
