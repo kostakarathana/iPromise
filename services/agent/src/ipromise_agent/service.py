@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import sys
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 from uuid import uuid4
@@ -66,6 +68,23 @@ from .store import InMemoryRunStore, RunStore
 
 logger = logging.getLogger("ipromise.audit")
 logger.setLevel(logging.INFO)
+_CLOUD_STDOUT_HANDLER = "ipromise-cloud-stdout"
+
+
+def configure_audit_logging() -> None:
+    """Emit one-line JSON receipts to Cloud Run stdout without Uvicorn prefixes."""
+
+    if not os.environ.get("K_SERVICE"):
+        return
+    if any(handler.get_name() == _CLOUD_STDOUT_HANDLER for handler in logger.handlers):
+        return
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.set_name(_CLOUD_STDOUT_HANDLER)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+    logger.propagate = False
 
 MAX_RUN_ATTEMPTS = 3
 # The execution claim outlives the 900-second HTTP request envelope, preventing a
@@ -1011,6 +1030,7 @@ class AuditService:
         logger.info(
             json.dumps(
                 {
+                    "severity": "INFO",
                     "event": "ipromise.audit.receipt",
                     "runId": run.id,
                     "status": run.status.value,
