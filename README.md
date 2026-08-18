@@ -10,21 +10,20 @@ The hackathon MVP focuses on one complete Taskmaster workflow: verifying an acco
 
 ## Status
 
-The minimum vertical slice is implemented and tested locally. It runs the synthetic
-product, deterministic audit agent, and Promise Ledger together; proves the virtual
-T0+1h/T0+25h deletion mismatch; supports GitHub App installation and repository
-selection; persists cloud-mode runs and OAuth state in Firestore; accepts an
-authenticated scheduled trigger; and routes one contradiction through a locked
-red-before/green-after Cloud Build verifier contract to an exact-byte draft-PR
-publisher. Integration tests cover concurrent runs, remote reconciliation, and
-checkpoint recovery. Those tests use controlled GitHub and Cloud Build gateways;
-they are not live external-action evidence.
+The actions-off baseline is deployed on Google Cloud. Correlated run
+`run_14a197bafd1d4a44a248e67320092d16` invoked Gemini 3.5 Flash through Google
+ADK on Cloud Run, exercised the synthetic product, persisted a scoped
+`CONTRADICTED` result in Firestore, and emitted the same run ID to Cloud Logging.
+The judge console is hosted at
+`https://ipromise-console-ipj6vqlg2q-uc.a.run.app`, and an authenticated
+Cloud Scheduler job is enabled every six hours.
 
-No live Cloud Run, Gemini, Cloud Build, or GitHub workflow receipt has been captured
-from this workstation. The eligible submission still requires a real Google Cloud
-deployment, live Gemini-through-ADK execution proof, repeated Cloud Build receipts,
-and one real draft-PR receipt. Verification and GitHub actions both default off. See
-the [truthful implementation status](docs/implementation-status.md).
+The locked red-before/green-after Cloud Build verifier and exact-byte draft-PR
+publisher are implemented and covered by integration/adversarial tests using
+controlled gateways. They are **not yet live external-action evidence**. The
+remaining core release gate is a real Cloud Build verification receipt followed
+by one real reconciled draft PR. Verification and GitHub actions both default
+off. See the [truthful implementation status](docs/implementation-status.md).
 
 ## Winning workflow
 

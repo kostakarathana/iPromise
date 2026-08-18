@@ -1,8 +1,10 @@
 # iPromise architecture
 
-Status: the verifier-to-draft-PR path is integrated and tested locally; all live
-Google Cloud, Gemini, Cloud Build, and GitHub workflow proof remains pending. See
-[implementation status](implementation-status.md).
+Status: the actions-off Cloud Run, Google ADK, Gemini 3.5 Flash, Firestore,
+Scheduler, Secret Manager, and Cloud Logging baseline is deployed with correlated
+run proof. The verifier-to-draft-PR path is integrated and tested locally; live
+Cloud Build and GitHub workflow proof remains pending. See [implementation
+status](implementation-status.md).
 
 iPromise is a scheduled promise-to-proof-to-action workflow. It is designed for the
 hackathon's **Taskmaster** track and deliberately avoids a chat-first interaction.
