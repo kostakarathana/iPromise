@@ -2,11 +2,12 @@
 
 The service converts one exact, customer-facing deletion promise into an executable control. It captures the source, grounds the quote, seeds a synthetic canary, calls the real reference deletion API, probes the approved stores, calculates a scoped verdict, and plans the safest response.
 
-This MVP can perform one real GitHub side effect: an evidence-backed issue in a
-repository verified through the GitHub App installation flow. It does so only when
-actions are explicitly enabled. A draft pull request remains blocked until an
-isolated verifier can truthfully prove fail-before/pass-after against an exact
-repository tree. Email is off.
+The service has two bounded GitHub outcomes, both disabled by default. A draft pull
+request is primary only when Cloud Build proves the expected failing baseline, the
+green hidden control, the regression suite, source provenance, and the exact bytes
+later published through Git objects. An evidence-backed issue is the safe fallback
+when that gate cannot pass. Email is off. The complete verifier-to-PR path is covered
+by controlled integration tests; no live Cloud Build or GitHub receipt is claimed.
 
 ## Run the first MVP
 
@@ -71,7 +72,14 @@ export IPROMISE_DEMO_BASE_URL=https://your-synthetic-service.run.app
 export IPROMISE_DEMO_TOKEN=replace-with-a-secret-manager-value
 export IPROMISE_AGENT_API_TOKEN=replace-with-an-independent-long-secret
 export IPROMISE_STATE_BACKEND=firestore
+export IPROMISE_VERIFIER_BACKEND=disabled
 ```
+
+`disabled` is the fail-closed default. A reviewed cloud rehearsal may set
+`IPROMISE_VERIFIER_BACKEND=cloud-build` together with the Cloud Build project,
+location, and dedicated verifier service account documented in
+[`docs/deployment.md`](../../docs/deployment.md). GitHub actions remain controlled
+separately by `IPROMISE_GITHUB_ACTIONS_ENABLED=false`.
 
 Cloud mode builds a typed Google ADK 2 graph (`START → promise_compiler`) and runs it through ADK's `InMemoryRunner`. Gemini receives captured visible text and must return a typed claim. Deterministic code still verifies the returned exact quote, binds the control, gathers evidence, calculates the verdict, and gates actions.
 
@@ -84,7 +92,11 @@ If ADK, ADC, Vertex configuration, or the model response is unavailable, the run
 - `INCONCLUSIVE`: required evidence was missing, stale, or unavailable.
 - `NOT_TESTED`: no approved executable control was bound.
 
-These are technical control results, never a legal-compliance conclusion. The action planner cannot mark a draft PR `READY` unless an isolated receipt proves the baseline failure, candidate success, regression success, and exact-tree verification.
+These are technical control results, never a legal-compliance conclusion. The action
+planner cannot mark a draft PR `READY` unless a Cloud Build receipt proves the
+baseline failure, candidate success, regression success, and exact-tree
+verification. The current deterministic remediation accepts only two exact files
+from the locked public iPromise snapshot; it is not a general code generator.
 
 ## Tests
 
@@ -96,5 +108,7 @@ uv run --extra dev --extra google --extra github pytest
 Tests cover the real synthetic contradiction, missing-evidence abstention, known
 late workers, exact-quote grounding, idempotency, strict API compatibility, model
 provenance, action safety, Cloud Scheduler deduplication, GitHub OAuth/PKCE and
-repository authorization, one-repository token scoping, one issue side effect, cloud
-configuration, and ADK graph construction without invoking Gemini.
+repository authorization, scoped installation tokens, issue reconciliation,
+Cloud Build request validation and fail-closed verification, exact-byte draft-PR
+publication, concurrent-run convergence, checkpoint recovery, cloud configuration,
+and ADK graph construction without invoking Gemini.

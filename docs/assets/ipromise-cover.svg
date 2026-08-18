@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000" viewBox="0 0 1500 1000" role="img" aria-labelledby="title desc">
+  <title id="title">iPromise — customer promises should behave like tests</title>
+  <desc id="desc">A quiet product cover showing a published promise becoming evidence and a bounded GitHub action.</desc>
+  <rect width="1500" height="1000" fill="#f7f8fa"/>
+  <rect x="60" y="60" width="1380" height="880" rx="22" fill="#ffffff" stroke="#e1e4e8" stroke-width="2"/>
+
+  <g transform="translate(118 116)" fill="none" stroke="#18181b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 2h-3C6.7 2 0 8.7 0 17v8h12V17H7"/>
+    <path d="m20 28 15 15L72 4"/>
+  </g>
+  <text x="208" y="157" fill="#18181b" font-family="Inter, Arial, sans-serif" font-size="46" font-weight="700" letter-spacing="-1.5">iPromise</text>
+  <text x="118" y="306" fill="#18181b" font-family="Inter, Arial, sans-serif" font-size="78" font-weight="700" letter-spacing="-3.5">Customer promises</text>
+  <text x="118" y="394" fill="#18181b" font-family="Inter, Arial, sans-serif" font-size="78" font-weight="700" letter-spacing="-3.5">should behave like tests.</text>
+  <text x="118" y="525" fill="#606873" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="400">Scheduled, evidence-backed audits that turn</text>
+  <text x="118" y="571" fill="#606873" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="400">policy drift into one bounded engineering action.</text>
+
+  <g transform="translate(118 666)" font-family="Inter, Arial, sans-serif">
+    <rect width="342" height="146" rx="12" fill="#ffffff" stroke="#d8dde3" stroke-width="2"/>
+    <text x="24" y="38" fill="#606873" font-size="18" font-weight="600">PROMISE</text>
+    <text x="24" y="78" fill="#18181b" font-size="23" font-weight="650">Delete active data</text>
+    <text x="24" y="111" fill="#18181b" font-size="23" font-weight="650">within 24 hours</text>
+
+    <path d="M374 73h60" stroke="#aeb6c0" stroke-width="3" stroke-linecap="round"/>
+    <path d="m424 62 12 11-12 11" fill="none" stroke="#aeb6c0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="466" width="342" height="146" rx="12" fill="#ffffff" stroke="#cf222e" stroke-width="2"/>
+    <circle cx="492" cy="33" r="7" fill="#cf222e"/>
+    <text x="510" y="39" fill="#cf222e" font-size="18" font-weight="700">CONTRADICTED</text>
+    <text x="490" y="82" fill="#18181b" font-size="23" font-weight="650">Analytics retained</text>
+    <text x="490" y="115" fill="#606873" font-size="20">1 active record at 25h</text>
+
+    <path d="M840 73h60" stroke="#aeb6c0" stroke-width="3" stroke-linecap="round"/>
+    <path d="m890 62 12 11-12 11" fill="none" stroke="#aeb6c0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="932" width="342" height="146" rx="12" fill="#18181b"/>
+    <text x="956" y="40" fill="#c7ccd2" font-size="18" font-weight="600">ACTION</text>
+    <text x="956" y="83" fill="#ffffff" font-size="23" font-weight="650">Open the fix</text>
+    <text x="956" y="116" fill="#c7ccd2" font-size="20">GitHub · scoped · auditable</text>
+  </g>
+
+  <text x="118" y="886" fill="#606873" font-family="Inter, Arial, sans-serif" font-size="21">Gemini 3.5 Flash · Google ADK · Cloud Run · Firestore</text>
+</svg>

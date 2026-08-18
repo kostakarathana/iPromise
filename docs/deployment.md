@@ -13,14 +13,20 @@ This procedure packages and deploys the smallest eligible Google Cloud slice:
   finding-receipt, and idempotency state;
 - a six-hour Cloud Scheduler job authenticated with a dedicated Google OIDC
   identity, with two bounded redeliveries after a retryable failure;
+- an explicitly enabled red-before/green-after verifier on Cloud Build,
+  executed as a dedicated identity with no runtime secrets or production-data
+  permissions;
 - a least-privilege GitHub App configuration whose secrets are mounted only into
   the agent; and
 - the judge console on Cloud Run, protected by a server-side access code.
 
-Cloud Run, Firestore, and Cloud Scheduler are real infrastructure dependencies
-once a deployment is verified. Pub/Sub, Cloud Storage, and the isolated verifier
-remain explicit release gates in the target architecture; this script does not
-pretend to provision integrations the current application does not use.
+Cloud Run, Firestore, Cloud Scheduler, and Cloud Build are real infrastructure
+dependencies once their deployed receipts are verified. Pub/Sub, Cloud Storage,
+and Cloud Run Sandboxes remain explicit target-architecture gates; this script
+does not pretend to provision integrations the current application does not use.
+The verifier backend defaults to `disabled` until the integrated workflow and
+permissions have passed the release gates below; configuration is not execution
+proof.
 
 ## Security boundary for this minimum
 
@@ -39,6 +45,24 @@ requests use a Google-signed OIDC token whose audience and service-account email
 are both verified by the agent. This is an interim deployment boundary, not the
 final private-agent architecture.
 
+The agent may submit, read, and cancel Cloud Build verifier runs through a
+project-local custom role containing only `cloudbuild.builds.create`,
+`cloudbuild.builds.get`, and `cloudbuild.builds.update`. It may act as only the
+dedicated `ipromise-verifier` identity for this purpose. That build identity has
+only `roles/logging.logWriter`: it receives no Secret Manager, Firestore, Vertex
+AI, GitHub, Artifact Registry, or Cloud Run role. The trusted inline build fetches
+one pinned commit from the public iPromise repository and writes its bounded
+receipt to Cloud Logging. Candidate content cannot provide verifier commands or
+the trusted out-of-band control; it can alter only the two exact source/test
+files admitted by the locked remediation template.
+
+Cloud Build has outbound network access for the pinned public source clone and
+locked dependency installation. This boundary is not a no-egress sandbox and must
+not be generalized to arbitrary generated code or arbitrary repositories. Its
+current safety case depends on the fixed entrant-owned public repository, trusted
+inline step program, exact-template hashes, no candidate-supplied commands, no
+mounted runtime/GitHub secrets, and the minimal build identity above.
+
 Do not use real customer data. Do not put secret values in command history,
 environment files, build arguments, image layers, or source control.
 
@@ -47,16 +71,21 @@ environment files, build arguments, image layers, or source control.
 - A dedicated Google Cloud project with billing enabled.
 - An active `gcloud` login with permission to enable services, create service
   accounts, bind IAM roles, read secrets, build images, and deploy Cloud Run. The
-  deployer must be able to act as the four runtime/trigger identities and the
-  dedicated `ipromise-builder` build identity. Cloud Run source deployment also
-  requires the deployer permissions represented by Cloud Run Source Developer
-  and Service Usage Consumer.
+  deployer must be able to create and bind the four runtime/trigger identities,
+  the dedicated `ipromise-builder` source-build identity, and—when the verifier
+  is enabled—the dedicated `ipromise-verifier` identity and project-local verifier
+  controller role.
+  Cloud Run source deployment also requires the deployer permissions represented
+  by Cloud Run Source Developer and Service Usage Consumer.
 - Vertex AI availability for the exact configured Gemini model in the selected
   region. Reverify model eligibility immediately before the final deployment.
 - A GitHub App owned by the entrant. Record its numeric App ID, URL slug, and
-  OAuth client ID. Grant only repository **Issues: read and write** plus the
-  implicit Metadata read permission for the current issue-opening slice. Install
-  it only on repositories the entrant is authorized to test.
+  OAuth client ID. For the winning path grant repository **Contents: read and
+  write**, **Pull requests: read and write**, **Issues: read and write** for the
+  fallback, plus implicit Metadata read. Do not grant Actions, Workflows,
+  Administration, Secrets, merge, or deployment authority. Install it only on the
+  entrant-owned demonstration repository and keep actions disabled until the live
+  permission review is complete.
 - Five distinct Secret Manager secrets with enabled versions:
   `ipromise-demo-token`, `ipromise-agent-api-token`,
   `ipromise-console-access-code`, `ipromise-github-client-secret`, and
@@ -142,6 +171,8 @@ authenticated read-only checks and identifies the exact project and resources:
 export IPROMISE_GCP_PROJECT=your-dedicated-project-id
 export IPROMISE_GCP_REGION=us-central1
 export IPROMISE_GCP_LOCATION=us-central1
+export IPROMISE_VERIFIER_BACKEND=disabled
+export IPROMISE_CLOUD_BUILD_LOCATION=australia-southeast1
 export IPROMISE_GITHUB_APP_ID=123456
 export IPROMISE_GITHUB_APP_SLUG=your-ipromise-app-slug
 export IPROMISE_GITHUB_APP_CLIENT_ID=Iv1.your-public-client-id
@@ -152,7 +183,13 @@ export IPROMISE_GITHUB_ACTIONS_ENABLED=false
 ./scripts/deploy-cloud-run --plan
 ```
 
-Review the account, project, region, service names, and model. Apply requires a
+Review the account, project, regions, service identities, verifier backend, and
+model. `IPROMISE_CLOUD_BUILD_PROJECT` and
+`IPROMISE_CLOUD_BUILD_SERVICE_ACCOUNT` are deliberately not deployment inputs:
+the script pins them to the selected project and its dedicated
+`ipromise-verifier` identity. The default `disabled` backend is fail-closed and
+cannot submit verifier builds. Change it to `cloud-build` only after reviewing the
+integrated workflow, IAM diff, source commit, and cost boundary. Apply requires a
 second variable that exactly matches the target project:
 
 ```bash
@@ -167,20 +204,31 @@ also refuses a dirty or untracked working tree. Commit the reviewed source first
 every Cloud Run revision is labeled `source-commit` with that exact full Git SHA.
 This makes the recorded cloud run traceable to the repository artifact.
 
-The apply path enables only the APIs needed for this slice, creates four scoped
-runtime/trigger service accounts plus a dedicated `ipromise-builder` service
-account if absent, and grants only that build identity `roles/run.builder`. All
-three source deployments explicitly use that identity; it receives no runtime
-secret access. The script grants the agent Vertex AI and Firestore access, grants
-secret access per runtime service, creates a Firestore Native database and regional
-source-image repository if absent, deploys the three services with explicit
-minimum/maximum-instance bounds, and creates the scheduled trigger. Scheduler
-makes one initial delivery plus at most two retries after a timeout or non-2xx
-response. The agent returns HTTP 503 plus `Retry-After: 300` while a scheduled run
-remains retryable; terminal outcomes return 2xx. The first configured retry waits
-at least 300 seconds so an abandoned five-minute execution or action lease can expire before
-redelivery. Backoff is capped at 600 seconds and the whole retry window is capped
-at 1,800 seconds.
+The apply path enables only the APIs needed for this slice, including Cloud Build.
+It creates four scoped runtime/trigger service accounts plus the separate
+`ipromise-builder` identity if absent. When and only when the verifier backend is
+explicitly `cloud-build`, it also creates `ipromise-verifier` and the custom
+controller role. The source builder receives only `roles/run.builder`; all three
+source deployments explicitly use it, and it receives no runtime secret access.
+The verifier receives only `roles/logging.logWriter`. The agent receives the
+three-permission custom verifier controller role and
+`roles/iam.serviceAccountUser` only on that verifier identity.
+The script grants the agent Vertex AI and Firestore access, grants secret access
+per runtime service, creates a Firestore Native database and regional source-image
+repository if absent, deploys the three services with explicit minimum/maximum-
+instance bounds, and creates the scheduled trigger.
+
+The synchronous MVP allows 900 seconds through both the console/agent Cloud Run
+requests and the Scheduler attempt, covering the compiler's bounded 120 seconds
+plus the verifier's bounded 750-second overall deadline. The durable run lease is
+1,200 seconds, deliberately longer than the HTTP envelope, while the narrower
+action lease remains 900 seconds.
+Scheduler makes one initial delivery plus at most two retries after a timeout or
+non-2xx response. The agent returns HTTP 503 plus `Retry-After: 1200` while a
+scheduled run remains retryable; terminal outcomes return 2xx. The first
+configured retry waits at least 1,200 seconds so an abandoned run lease expires
+before redelivery. Backoff is capped at 1,800 seconds and the whole retry window
+is capped at 6,000 seconds, leaving room for both bounded retries.
 
 If the project already has a `(default)` database, apply verifies that its type is
 `FIRESTORE_NATIVE` and fails before deployment for Datastore mode. The database
@@ -216,7 +264,13 @@ check. After the App permissions and intended repository have been reviewed, set
 it to `true`, re-run `--plan`, and deliberately re-run `--apply`. That update
 creates a new agent revision. The verified installation and selected repository
 remain in Firestore. Enabling this flag authorizes the agent's bounded,
-idempotent issue side effect; it does not authorize merge or deployment.
+idempotent draft-PR or issue side effect; it does not authorize merge or deployment.
+
+The verifier backend and GitHub action flag are independent. A first deployment
+may use `IPROMISE_VERIFIER_BACKEND=cloud-build` while keeping
+`IPROMISE_GITHUB_ACTIONS_ENABLED=false`: it can produce a real Cloud Build verifier
+receipt without creating a branch or pull request. Enabling GitHub actions is a
+separate, explicit deployment review.
 
 ## Judge access credential
 
@@ -261,13 +315,24 @@ deploy` returned successfully.
 3. Connect the GitHub App from the console. Confirm the browser returns only to
    the exact configured HTTPS callback, the accessible repository list matches
    the App installation, and an archived repository cannot be selected.
-4. With actions explicitly enabled, cause the synthetic contradiction once and
-   confirm exactly one evidence-backed GitHub issue appears in the selected
-   repository. Run `./scripts/smoke-cloud "$IPROMISE_DEPLOYED_CONSOLE_URL"`.
-   It proves that replaying one trigger returns the same run, then creates a
-   distinct run for the unchanged finding and requires both runs to reconcile the
-   same remote issue URL rather than duplicate it.
-5. Confirm the same run ID in the console, GitHub issue marker, and a structured
+4. Cause the synthetic contradiction and require a Cloud Build receipt with the
+   exact public repository URL, full base SHA, candidate diff hash, seven trusted
+   step results, and durable HTTPS log URL. Confirm the build ran as
+   `ipromise-verifier@PROJECT_ID.iam.gserviceaccount.com` and that the receipt
+   reports expected red-before, green-after, regression pass, and byte-exact
+   candidate verification. Confirm the console receipt shows the same build ID and
+   durable log link. A configured backend or a submitted build alone is not
+   verification proof.
+5. With actions explicitly enabled, cause the synthetic contradiction once and
+   confirm exactly one evidence-backed draft GitHub pull request appears in the
+   selected repository. Run `./scripts/smoke-cloud "$IPROMISE_DEPLOYED_CONSOLE_URL"`.
+   Replay the same trigger/idempotency key and require it to return the same run
+   and remote pull-request receipt without creating a duplicate. The smoke command
+   also starts a distinct run for the unchanged exact repair and requires the same
+   PR URL, complete verifier receipt, and no second remote action. Local tests cover
+   this reconciliation; the command is the required deployed proof.
+6. Confirm the same run ID in the console, GitHub pull-request marker, Cloud Build
+   receipt, and a structured
    application receipt in Cloud Logging. Set the exact ID returned by the audit;
    a Cloud Run request-access log without the application receipt is not proof:
 
@@ -285,9 +350,10 @@ deploy` returned successfully.
    final action state. If the application receipt is absent or only infrastructure
    access logs appear, logging proof is still pending.
 
-6. Capture the console URL, Cloud Run service/revision screen, correlated log
-   entry, and model/runtime receipt for the demo video and evidence matrix.
-7. Run `pnpm verify` from a clean checkout and record the immutable commit SHA.
+7. Capture the console URL, Cloud Run service/revision screen, correlated agent
+   and Cloud Build log entries, and model/runtime receipt for the demo video and
+   evidence matrix.
+8. Run `pnpm verify` from a clean checkout and record the immutable commit SHA.
 
 Until all relevant receipts exist, keep
 [`implementation-status.md`](implementation-status.md) and
@@ -299,8 +365,11 @@ Cloud Run retains revisions. If a new revision fails verification, route traffic
 back to the last verified revision with `gcloud run services update-traffic`; do
 not describe the failed revision as production proof. The synthetic service and
 console can scale to zero; Firestore preserves agent state across revisions.
-Configure a project
-budget and alerts before judge traffic, because budget alerts do not cap spend.
+Cloud Build verifier runs do not scale to zero in the same sense: every submitted
+verification consumes build resources until it terminates or reaches the bounded
+deadline. Keep Scheduler paused outside deliberate testing until cost and
+idempotency receipts are proven. Configure a project budget and alerts before
+judge traffic, because budget alerts do not cap spend.
 
 After judging, remove public access or delete only the three explicitly named
 services after first preserving required submission evidence. Do not delete a

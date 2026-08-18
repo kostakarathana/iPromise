@@ -33,6 +33,10 @@ class Settings:
     firestore_database: str = "(default)"
     google_oidc_audience: str | None = None
     scheduler_service_account: str | None = None
+    verifier_backend: str = "disabled"
+    cloud_build_project: str | None = None
+    cloud_build_location: str = "australia-southeast1"
+    cloud_build_service_account: str | None = None
 
     @property
     def github_configured(self) -> bool:
@@ -94,6 +98,17 @@ class Settings:
             google_oidc_audience=os.getenv("IPROMISE_GOOGLE_OIDC_AUDIENCE") or None,
             scheduler_service_account=os.getenv(
                 "IPROMISE_SCHEDULER_SERVICE_ACCOUNT"
+            )
+            or None,
+            verifier_backend=os.getenv(
+                "IPROMISE_VERIFIER_BACKEND", "disabled"
+            ).strip().lower(),
+            cloud_build_project=os.getenv("IPROMISE_CLOUD_BUILD_PROJECT") or None,
+            cloud_build_location=os.getenv(
+                "IPROMISE_CLOUD_BUILD_LOCATION", "australia-southeast1"
+            ).strip(),
+            cloud_build_service_account=os.getenv(
+                "IPROMISE_CLOUD_BUILD_SERVICE_ACCOUNT"
             )
             or None,
         )
@@ -187,3 +202,28 @@ class Settings:
             raise ValueError(
                 "Scheduler OIDC audience and service account must be configured together"
             )
+        if self.verifier_backend not in {"disabled", "cloud-build"}:
+            raise ValueError(
+                "IPROMISE_VERIFIER_BACKEND must be disabled or cloud-build"
+            )
+        if self.verifier_backend == "cloud-build":
+            if not self.cloud_build_project or not self.cloud_build_service_account:
+                raise ValueError(
+                    "Cloud Build verification requires IPROMISE_CLOUD_BUILD_PROJECT "
+                    "and IPROMISE_CLOUD_BUILD_SERVICE_ACCOUNT"
+                )
+            from .cloudbuild_verifier import (
+                CloudBuildVerifierConfig,
+                VerifierConfigurationError,
+            )
+
+            try:
+                CloudBuildVerifierConfig(
+                    project_id=self.cloud_build_project,
+                    location=self.cloud_build_location,
+                    service_account=self.cloud_build_service_account,
+                )
+            except VerifierConfigurationError as exc:
+                raise ValueError(
+                    f"Invalid Cloud Build verifier configuration: {exc}"
+                ) from exc

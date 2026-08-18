@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 
 def _to_camel(value: str) -> str:
@@ -200,6 +205,10 @@ class RemediationProposal(WireModel):
 
 
 class VerificationReceipt(WireModel):
+    _artifact_binding: "VerificationArtifactBinding | None" = PrivateAttr(
+        default=None
+    )
+
     verifier: str
     baseline_control: VerificationResult
     candidate_control: VerificationResult
@@ -208,9 +217,175 @@ class VerificationReceipt(WireModel):
     isolated: bool
     publishable: bool
     detail: str
+    build_id: str | None = None
+    log_url: str | None = None
+
+    @property
+    def artifact_binding(self) -> "VerificationArtifactBinding | None":
+        return self._artifact_binding
+
+    def checkpoint_artifact_binding(
+        self, binding: "VerificationArtifactBinding | None"
+    ) -> None:
+        self._artifact_binding = binding
+
+
+class VerificationArtifactBinding(WireModel):
+    """Tamper-evident link from a receipt to exact source, bytes, and build."""
+
+    schema_version: str = Field(pattern=r"^ipromise\.verification-binding\.v1$")
+    repository_url: str = Field(min_length=12, max_length=2_000)
+    base_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    unified_diff_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preimage_hashes: dict[str, str] = Field(min_length=1, max_length=16)
+    candidate_hashes: dict[str, str] = Field(min_length=1, max_length=16)
+    build_id: str = Field(min_length=1, max_length=256)
+    build_name: str = Field(min_length=1, max_length=1_000)
+    log_url: str = Field(min_length=12, max_length=2_000)
+    binding_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @staticmethod
+    def _digest(payload: dict[str, Any]) -> str:
+        canonical = json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        repository_url: str,
+        base_sha: str,
+        unified_diff_sha256: str,
+        preimage_hashes: dict[str, str],
+        candidate_hashes: dict[str, str],
+        build_id: str,
+        build_name: str,
+        log_url: str,
+    ) -> "VerificationArtifactBinding":
+        payload = {
+            "schemaVersion": "ipromise.verification-binding.v1",
+            "repositoryUrl": repository_url,
+            "baseSha": base_sha,
+            "unifiedDiffSha256": unified_diff_sha256,
+            "preimageHashes": dict(preimage_hashes),
+            "candidateHashes": dict(candidate_hashes),
+            "buildId": build_id,
+            "buildName": build_name,
+            "logUrl": log_url,
+        }
+        return cls.model_validate(
+            {**payload, "bindingSha256": cls._digest(payload)}
+        )
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> "VerificationArtifactBinding":
+        if set(self.preimage_hashes) != set(self.candidate_hashes):
+            raise ValueError("Verification binding file paths do not match")
+        for mapping in (self.preimage_hashes, self.candidate_hashes):
+            for path, digest in mapping.items():
+                if not path or len(path) > 1_000:
+                    raise ValueError("Verification binding contains an invalid path")
+                if (
+                    len(digest) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in digest
+                    )
+                ):
+                    raise ValueError("Verification binding contains an invalid SHA-256")
+        payload = self.model_dump(mode="json", by_alias=True)
+        supplied = payload.pop("bindingSha256")
+        if supplied != self._digest(payload):
+            raise ValueError("Verification artifact binding digest does not match")
+        return self
+
+
+class VerifiedCandidateFileCheckpoint(WireModel):
+    """One verifier-authenticated file retained only for action recovery."""
+
+    path: str = Field(min_length=1, max_length=1_000)
+    preimage_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    candidate_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content_base64: str = Field(min_length=1, max_length=16 * 1024 * 1024)
+
+    @model_validator(mode="after")
+    def validate_exact_bytes(self) -> "VerifiedCandidateFileCheckpoint":
+        try:
+            content = base64.b64decode(self.content_base64, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError(
+                "Verified candidate content must be canonical base64"
+            ) from exc
+        if base64.b64encode(content).decode("ascii") != self.content_base64:
+            raise ValueError("Verified candidate content must use canonical base64")
+        if hashlib.sha256(content).hexdigest() != self.candidate_sha256:
+            raise ValueError("Verified candidate bytes do not match their SHA-256")
+        return self
+
+    @property
+    def content(self) -> bytes:
+        return base64.b64decode(self.content_base64, validate=True)
+
+
+class VerifiedCandidateCheckpoint(WireModel):
+    """Minimal byte-exact publisher input, separate from the public run wire."""
+
+    schema_version: str = Field(pattern=r"^ipromise\.verified-candidate\.v1$")
+    repository_url: str = Field(min_length=12, max_length=2_000)
+    base_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    unified_diff_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    files: list[VerifiedCandidateFileCheckpoint] = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_unique_paths(self) -> "VerifiedCandidateCheckpoint":
+        paths = [item.path for item in self.files]
+        if len(paths) != len(set(paths)):
+            raise ValueError("Verified candidate paths must be unique")
+        return self
+
+    @classmethod
+    def from_verified_candidate(
+        cls, candidate: Any
+    ) -> "VerifiedCandidateCheckpoint":
+        tree = candidate.candidate_tree
+        preimages = candidate.preimage_hashes
+        candidates = candidate.candidate_hashes
+        if set(tree) != set(preimages) or set(tree) != set(candidates):
+            raise ValueError("Verified candidate path maps do not match")
+        return cls(
+            schema_version="ipromise.verified-candidate.v1",
+            repository_url=candidate.repository_url,
+            base_sha=candidate.base_sha,
+            unified_diff_sha256=candidate.unified_diff_sha256,
+            files=[
+                VerifiedCandidateFileCheckpoint(
+                    path=path,
+                    preimage_sha256=preimages[path],
+                    candidate_sha256=candidates[path],
+                    content_base64=base64.b64encode(tree[path]).decode("ascii"),
+                )
+                for path in sorted(tree)
+            ],
+        )
+
+    @property
+    def candidate_tree(self) -> dict[str, bytes]:
+        return {item.path: item.content for item in self.files}
+
+    @property
+    def preimage_hashes(self) -> dict[str, str]:
+        return {item.path: item.preimage_sha256 for item in self.files}
+
+    @property
+    def candidate_hashes(self) -> dict[str, str]:
+        return {item.path: item.candidate_sha256 for item in self.files}
 
 
 class AuditRun(WireModel):
+    _verified_candidate: VerifiedCandidateCheckpoint | None = PrivateAttr(default=None)
+
     id: str = Field(min_length=8)
     mode: Mode
     status: RunStatus
@@ -228,6 +403,15 @@ class AuditRun(WireModel):
     repository: GitHubRepository | None = None
     idempotency_key: str
     synthetic_fixture_id: str | None = None
+
+    @property
+    def verified_candidate(self) -> VerifiedCandidateCheckpoint | None:
+        return self._verified_candidate
+
+    def checkpoint_verified_candidate(
+        self, candidate: VerifiedCandidateCheckpoint | None
+    ) -> None:
+        self._verified_candidate = candidate
 
 
 class CreateRunRequest(WireModel):

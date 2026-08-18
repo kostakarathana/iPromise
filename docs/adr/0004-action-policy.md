@@ -49,14 +49,15 @@ frequency. Changing those boundaries requires a human.
   version and quote, control ID, verdict, and normalized semantic evidence. It
   excludes run IDs, timestamps, synthetic subject IDs, and artifact paths so an
   unchanged finding across scheduled runs reconciles to one issue.
-- Future patch/PR identity additionally binds the repository base commit and
-  exact candidate tree; a moved base invalidates the verifier receipt.
-- Branches use a deterministic `ipromise/<control>/<finding-id>` form.
+- Patch/PR identity binds the repository ID, base commit, source URL, exact diff,
+  and candidate/preimage hashes; a moved base invalidates the verifier receipt.
+- Branches use `ipromise/promise-drift-<20-hex-fingerprint>`.
 - PRs and issues contain a hidden iPromise action marker.
 - Retries first reconcile existing branches, PRs, issues, and delivery receipts.
-- A transactional Firestore finding-intent lease serializes concurrent Cloud Run
-  workers before the remote preflight and write. Duplicate events and distinct
-  runs with an unchanged finding must not create duplicate external actions.
+- A transactional Firestore issue-intent lease serializes the issue path. Draft PRs
+  derive the same branch/marker from the exact repair fingerprint, then reconcile
+  remote Git refs and PRs before every write. Duplicate events and concurrent or
+  distinct runs with an unchanged exact repair converge on the existing action.
 - Email uses a finding/event/digest idempotency key and a configured cooldown.
 
 ## Content policy

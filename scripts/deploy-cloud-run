@@ -27,6 +27,8 @@ Optional environment:
   IPROMISE_GCP_REGION              default: us-central1
   IPROMISE_GCP_LOCATION            default: IPROMISE_GCP_REGION
   IPROMISE_GEMINI_MODEL            default: gemini-3.5-flash
+  IPROMISE_VERIFIER_BACKEND        default: disabled
+  IPROMISE_CLOUD_BUILD_LOCATION    default: australia-southeast1
   IPROMISE_GITHUB_ACTIONS_ENABLED  default: false
   IPROMISE_SCHEDULE                default: 0 */6 * * *
   IPROMISE_CONSOLE_BASE_URL        default: deployed console URL
@@ -75,6 +77,8 @@ project="${IPROMISE_GCP_PROJECT:-}"
 region="${IPROMISE_GCP_REGION:-us-central1}"
 location="${IPROMISE_GCP_LOCATION:-$region}"
 gemini_model="${IPROMISE_GEMINI_MODEL:-gemini-3.5-flash}"
+verifier_backend="${IPROMISE_VERIFIER_BACKEND:-disabled}"
+cloud_build_location="${IPROMISE_CLOUD_BUILD_LOCATION:-australia-southeast1}"
 github_actions_enabled="${IPROMISE_GITHUB_ACTIONS_ENABLED:-false}"
 github_app_id="${IPROMISE_GITHUB_APP_ID:-}"
 github_app_slug="${IPROMISE_GITHUB_APP_SLUG:-}"
@@ -96,6 +100,8 @@ agent_sa_id="ipromise-agent"
 console_sa_id="ipromise-console"
 scheduler_sa_id="ipromise-scheduler"
 build_sa_id="ipromise-builder"
+verifier_sa_id="ipromise-verifier"
+verifier_controller_role_id="ipromiseVerifierController"
 
 [[ -z "${IPROMISE_DEMO_TOKEN:-}" ]] \
   || die "unset IPROMISE_DEMO_TOKEN; provide it only through Secret Manager"
@@ -120,6 +126,10 @@ build_sa_id="ipromise-builder"
   || die "IPROMISE_GCP_LOCATION is not a valid regional Vertex AI location"
 [[ "$gemini_model" =~ ^[A-Za-z0-9._/-]+$ ]] \
   || die "IPROMISE_GEMINI_MODEL contains unsupported characters"
+[[ "$verifier_backend" =~ ^(cloud-build|disabled)$ ]] \
+  || die "IPROMISE_VERIFIER_BACKEND must be cloud-build or disabled"
+[[ "$cloud_build_location" =~ ^(global|[a-z]+(-[a-z0-9]+)+)$ ]] \
+  || die "IPROMISE_CLOUD_BUILD_LOCATION is not a valid Cloud Build location"
 [[ "$github_actions_enabled" =~ ^(true|false)$ ]] \
   || die "IPROMISE_GITHUB_ACTIONS_ENABLED must be true or false"
 [[ "$github_app_id" =~ ^[0-9]+$ ]] \
@@ -230,11 +240,13 @@ printf '  account:    %s\n' "$active_account"
 printf '  project:    %s\n' "$project"
 printf '  region:     %s\n' "$region"
 printf '  model:      %s\n' "$gemini_model"
+printf '  verifier:   %s (%s)\n' "$verifier_backend" "$cloud_build_location"
 printf '  GitHub App: %s (%s; actions %s)\n' \
   "$github_app_slug" "$github_app_id" "$github_actions_enabled"
 printf '  services:   %s, %s, %s\n' \
   "$demo_service" "$agent_service" "$console_service"
 printf '  build SA:   %s@%s.iam.gserviceaccount.com\n' "$build_sa_id" "$project"
+printf '  verifier SA: %s@%s.iam.gserviceaccount.com\n' "$verifier_sa_id" "$project"
 printf '  secrets:    %s, %s, %s, %s, %s (values are never read or printed)\n' \
   "$demo_secret" "$agent_secret" "$console_access_secret" \
   "$github_client_secret" "$github_private_key_secret"
@@ -311,7 +323,34 @@ agent_sa="$agent_sa_id@$project.iam.gserviceaccount.com"
 console_sa="$console_sa_id@$project.iam.gserviceaccount.com"
 scheduler_sa="$scheduler_sa_id@$project.iam.gserviceaccount.com"
 build_sa="$build_sa_id@$project.iam.gserviceaccount.com"
+verifier_sa="$verifier_sa_id@$project.iam.gserviceaccount.com"
 build_sa_resource="projects/$project/serviceAccounts/$build_sa"
+verifier_sa_resource="projects/$project/serviceAccounts/$verifier_sa"
+verifier_controller_role="projects/$project/roles/$verifier_controller_role_id"
+
+# The runtime submits, reads, and, on a bounded deadline, cancels only verifier
+# builds. A project-local custom role avoids the list, retry, and remote-blob
+# permissions in the predefined Cloud Build Editor role.
+if [[ "$verifier_backend" == cloud-build ]]; then
+  ensure_service_account "$verifier_sa_id" "iPromise isolated Cloud Build verifier"
+  verifier_controller_permissions="cloudbuild.builds.create,cloudbuild.builds.get,cloudbuild.builds.update"
+  if "${gcloud_cmd[@]}" iam roles describe "$verifier_controller_role_id" \
+    --project "$project" --format='value(name)' >/dev/null 2>&1; then
+    "${gcloud_cmd[@]}" iam roles update "$verifier_controller_role_id" \
+      --project "$project" \
+      --title "iPromise verifier controller" \
+      --description "Submit, read, and cancel bounded iPromise verifier builds" \
+      --permissions "$verifier_controller_permissions" \
+      --stage GA --quiet >/dev/null
+  else
+    "${gcloud_cmd[@]}" iam roles create "$verifier_controller_role_id" \
+      --project "$project" \
+      --title "iPromise verifier controller" \
+      --description "Submit, read, and cancel bounded iPromise verifier builds" \
+      --permissions "$verifier_controller_permissions" \
+      --stage GA --quiet >/dev/null
+  fi
+fi
 
 "${gcloud_cmd[@]}" projects add-iam-policy-binding "$project" \
   --member "serviceAccount:$agent_sa" \
@@ -325,6 +364,21 @@ build_sa_resource="projects/$project/serviceAccounts/$build_sa"
   --member "serviceAccount:$build_sa" \
   --role roles/run.builder \
   --condition=None --quiet >/dev/null
+if [[ "$verifier_backend" == cloud-build ]]; then
+  "${gcloud_cmd[@]}" projects add-iam-policy-binding "$project" \
+    --member "serviceAccount:$agent_sa" \
+    --role "$verifier_controller_role" \
+    --condition=None --quiet >/dev/null
+  "${gcloud_cmd[@]}" iam service-accounts add-iam-policy-binding "$verifier_sa" \
+    --project "$project" \
+    --member "serviceAccount:$agent_sa" \
+    --role roles/iam.serviceAccountUser \
+    --condition=None --quiet >/dev/null
+  "${gcloud_cmd[@]}" projects add-iam-policy-binding "$project" \
+    --member "serviceAccount:$verifier_sa" \
+    --role roles/logging.logWriter \
+    --condition=None --quiet >/dev/null
+fi
 
 firestore_type="$("${gcloud_cmd[@]}" firestore databases describe \
   --database='(default)' --project "$project" \
@@ -422,7 +476,7 @@ if [[ "$existing_agent_url" == https://* && -z "$console_base_url" ]]; then
   die "an existing agent was found but no console origin could be resolved; set IPROMISE_CONSOLE_BASE_URL rather than deploying a revision with stripped GitHub/Scheduler configuration"
 fi
 
-agent_base_env="IPROMISE_MODE=cloud,IPROMISE_COMPILER=adk,IPROMISE_STATE_BACKEND=firestore,IPROMISE_FIRESTORE_DATABASE=(default),GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$project,GOOGLE_CLOUD_LOCATION=$location,IPROMISE_GEMINI_MODEL=$gemini_model,IPROMISE_DEMO_BASE_URL=$demo_url,IPROMISE_EXECUTION_TARGET=cloud-run"
+agent_base_env="IPROMISE_MODE=cloud,IPROMISE_COMPILER=adk,IPROMISE_STATE_BACKEND=firestore,IPROMISE_FIRESTORE_DATABASE=(default),GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$project,GOOGLE_CLOUD_LOCATION=$location,IPROMISE_GEMINI_MODEL=$gemini_model,IPROMISE_DEMO_BASE_URL=$demo_url,IPROMISE_EXECUTION_TARGET=cloud-run,IPROMISE_VERIFIER_BACKEND=$verifier_backend,IPROMISE_CLOUD_BUILD_PROJECT=$project,IPROMISE_CLOUD_BUILD_LOCATION=$cloud_build_location,IPROMISE_CLOUD_BUILD_SERVICE_ACCOUNT=$verifier_sa_resource"
 agent_base_secrets="IPROMISE_DEMO_TOKEN=$demo_secret:$demo_secret_version,IPROMISE_AGENT_API_TOKEN=$agent_secret:$agent_secret_version"
 agent_needs_activation=true
 agent_deploy_env="$agent_base_env"
@@ -439,7 +493,7 @@ printf '\nDeploying the Google ADK agent...\n'
   --build-service-account "$build_sa_resource" \
   --service-account "$agent_sa" \
   --memory 1Gi \
-  --timeout 300s \
+  --timeout 900s \
   --min-instances 0 \
   --max-instances 1 \
   --concurrency 10 \
@@ -458,7 +512,7 @@ printf '\nDeploying the judge console...\n'
   --build-service-account "$build_sa_resource" \
   --service-account "$console_sa" \
   --memory 512Mi \
-  --timeout 300s \
+  --timeout 900s \
   --min-instances 0 \
   --max-instances 2 \
   --concurrency 40 \
@@ -497,11 +551,11 @@ scheduler_args=(
   --http-method POST
   --oidc-service-account-email "$scheduler_sa"
   --oidc-token-audience "$agent_url"
-  --attempt-deadline 300s
+  --attempt-deadline 900s
   --max-retry-attempts=2
-  --max-retry-duration=1800s
-  --min-backoff=300s
-  --max-backoff=600s
+  --max-retry-duration=6000s
+  --min-backoff=1200s
+  --max-backoff=1800s
   --max-doublings=1
   --quiet
 )

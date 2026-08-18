@@ -1,18 +1,21 @@
 # iPromise threat model
 
-Status: minimum issue-opening controls are partially implemented and locally
-tested. Verifier, draft-PR, artifact-storage, Model Armor, and email controls are
-explicit targets and are not treated as current evidence.
+Status: issue fallback and the locked verifier-to-draft-PR path are implemented and
+tested locally with controlled external gateways. Live Cloud Build/GitHub receipts,
+Model Armor, generalized repository repair, artifact storage, and email remain
+pending and are not treated as current evidence.
 
 ## Scope and assumptions
 
 The working minimum reads an authorized public or staging product surface,
-operates on a synthetic reference SaaS, binds an explicitly selected repository,
-and may create one evidence-backed GitHub issue when enabled. It does not yet read
-repository contents or execute candidate code. Isolated candidate verification,
-exact-tree draft PRs, and opted-in email are target capabilities. Neither current
-nor target workflow processes real customer data in the primary demonstration,
-makes legal determinations, merges code, deploys code, or contacts customers.
+operates on a synthetic reference SaaS, and binds an explicitly selected
+repository. The current executable repair is narrower than repository connection:
+it reads two allowlisted files from the fixed public entrant-owned iPromise
+repository, accepts only one byte-exact remediation template, submits a fixed Cloud
+Build program, and can publish those verified bytes as a draft PR when enabled. An
+issue is the fallback. Neither current nor target workflow processes real customer
+data in the primary demonstration, makes legal determinations, merges or deploys
+code, or contacts customers.
 
 ## Assets
 
@@ -28,9 +31,10 @@ makes legal determinations, merges code, deploys code, or contacts customers.
 1. Untrusted page or repository text cannot grant itself a tool or permission.
 2. Gemini cannot compute the final evidence verdict or authorize an external
    action.
-3. **Target verifier gate:** generated code cannot access network, cloud metadata,
-   or credentials.
-4. **Target PR gate:** no candidate reaches GitHub without a matching baseline
+3. **Current verifier gate:** only the fixed entrant-owned repository and exact
+   approved candidate may execute; candidate data cannot select build commands,
+   images, URLs, or destinations, and no application/GitHub secrets are mounted.
+4. **Current PR gate:** no candidate reaches GitHub without a matching baseline
    failure, candidate pass, immutable manifest, and current base SHA.
 5. Duplicate delivery creates one logical run execution and at most one external
    action per finding intent.
@@ -44,10 +48,10 @@ makes legal determinations, merges code, deploys code, or contacts customers.
 | --- | --- | --- | --- |
 | Prompt injection in policy/UI text | Source -> model | Treat source as quoted data, Model Armor screening, strict schemas, fixed system policy, no model credentials/tools | Reject or abstain |
 | SSRF or metadata access | Capture | Scheme/host allowlist, DNS/IP validation before and after redirects, block private/link-local/metadata ranges | `FAILED_SAFE` |
-| Malicious repository content | Repository -> agent | Parse as untrusted data; fixed tool catalog; never execute during analysis | No repair/action |
-| Secret exfiltration through generated code | Verifier | No egress, no inherited environment, no mounted secrets, redacted logs | Kill sandbox; no PR |
+| Malicious repository content | Repository -> agent | Parse as untrusted during analysis; current executable path additionally requires the fixed entrant-owned public repository, full base SHA, allowlisted files, and exact preimage hashes | No repair/action |
+| Secret exfiltration through candidate code | Verifier | Current candidate is byte-exact and contributes no commands; no runtime/GitHub secrets are mounted; dedicated build identity has only Logging write. Cloud Build still has outbound source/dependency access, so arbitrary generated code is prohibited | Cancel/reject; no PR |
 | Destructive or broad patch | Model -> repository | Allowed-path policy, base/preimage hashes, file and diff limits, protected-file denial | Optional issue only |
-| Candidate weakens its test | Patch -> verifier | Trusted control and harness are outside patchable paths; candidate tests are supplemental | No PR |
+| Candidate weakens its test | Patch -> verifier | The hidden control and fixed commands are outside patchable paths; the exact candidate test edit is supplemental and all candidate/diff hashes are locked | No PR |
 | False success from a missing configured probe | Probe -> verdict | Required completeness across the current two-store adapter and a deterministic verdict; versioned configurable inventory is a target | `INCONCLUSIVE` |
 | Time-of-check/time-of-use branch drift | Verifier -> GitHub | Re-read base SHA; publish exact tested tree; regenerate on mismatch | Stale candidate |
 | Duplicate run or PR/issue/email | Event/retry -> workflow/integrations | Stable trigger key, transactional execution/action leases, stable synthetic fixture identity, hidden markers, remote reconciliation | Reuse existing run/action |
@@ -58,7 +62,7 @@ makes legal determinations, merges code, deploys code, or contacts customers.
 | PII retained in artifacts | Capture/storage | Synthetic data by default, minimization/redaction, TTL lifecycle, private bucket | Quarantine/delete artifact |
 | Resource exhaustion or cost attack | Public trigger/cloud | Authentication, quotas, concurrency one, max instances, timeouts, budgets | Throttle/fail safely |
 | Supply-chain compromise | Build/runtime | Lockfiles, dependency scanning, trusted base images, pinned build inputs | Block release |
-| Sandbox Preview instability | Agent -> verifier | Repeated release gate and Cloud Build fallback behind the same interface | Switch backend |
+| Future Sandbox Preview instability | Agent -> verifier | Keep the proven Cloud Build backend behind the same interface unless Sandbox passes repeated deployed reliability gates | Retain Cloud Build |
 
 ## Action-specific controls
 
@@ -67,9 +71,10 @@ down-scoped tokens and no Administration, Actions, Secrets, merge, or deployment
 authority. The permissions design follows GitHub's
 [official guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app).
 
-The current integration can create issues and uses evidence-only language. Future
-PRs will be drafts, and future email will be opt-in with only a finding summary
-and safe link. The complete action policy is in
+The current integration can create draft PRs or issues and uses evidence-only
+language. PR publication is draft-only and accepts the verifier's exact bytes;
+email remains a future opt-in route with only a finding summary and safe link. The
+complete action policy is in
 [ADR 0004](adr/0004-action-policy.md).
 
 ## Validation required before submission
@@ -79,7 +84,10 @@ and safe link. The complete action policy is in
 - A patch touching protected files never reaches a verifier or remote branch.
 - Failed, timed-out, missing, and stale evidence never produces a PR.
 - Replaying the same event produces one run identity and one external action.
-- Candidate processes cannot observe repository/GCP/GitHub secrets or use egress.
+- The candidate cannot alter the fixed build program, images, commands, source URL,
+  hidden control, or destination; the build mounts no runtime/GitHub secrets and its
+  identity has only the documented Logging role. Record that Cloud Build dependency
+  and source fetches use outbound network access.
 - Email opt-out, allowlist, rate limit, and redaction tests pass if email ships.
 
 Test results belong in [evaluation.md](evaluation.md) only after they are measured.

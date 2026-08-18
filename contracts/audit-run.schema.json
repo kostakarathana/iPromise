@@ -233,7 +233,14 @@
         "exactTreeVerified": { "type": "boolean" },
         "isolated": { "type": "boolean" },
         "publishable": { "type": "boolean" },
-        "detail": { "type": "string" }
+        "detail": { "type": "string" },
+        "buildId": { "type": ["string", "null"], "minLength": 1 },
+        "logUrl": {
+          "anyOf": [
+            { "type": "string", "format": "uri", "pattern": "^https://" },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "repository": {

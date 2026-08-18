@@ -45,9 +45,9 @@ def plan_actions(
             state=ActionState.READY if proven else ActionState.BLOCKED,
             title="Remove overdue analytics profile during account deletion",
             reason=(
-                "Isolated fail-before/pass-after receipt authorizes a draft PR"
+                "Cloud Build fail-before/pass-after receipt authorizes a draft PR"
                 if proven
-                else "Blocked until an isolated verifier proves the exact candidate tree"
+                else "Blocked until Cloud Build proves the exact candidate tree"
             ),
             verified=proven,
         )

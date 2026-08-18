@@ -6,7 +6,10 @@ import {
 } from "@/lib/contracts";
 
 const GET_TIMEOUT_MS = 10_000;
-const RUN_TIMEOUT_MS = 120_000;
+// The synchronous hackathon path may spend up to 750 seconds in the isolated
+// verifier. Keep the console proxy inside the same 900-second envelope as the
+// agent and Cloud Run request timeouts so the UI does not abandon a live run.
+const RUN_TIMEOUT_MS = 900_000;
 
 export class AgentProxyError extends Error {
   constructor(

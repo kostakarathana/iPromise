@@ -1,7 +1,8 @@
 # Devpost submission draft
 
 Status: **working copy — do not submit until every final gate below has a real
-receipt.** Last reviewed 2026-08-17 AEST.
+receipt.** The verifier-to-PR path is verified only with local controlled gateways;
+cloud deployment remains pending. Last reviewed 2026-08-18 AEST.
 
 ## Listing fields
 
@@ -43,10 +44,11 @@ or six-hour scheduled trigger starts the same autonomous workflow. iPromise:
    records after the stated deadline;
 5. computes a scoped verdict outside the model;
 6. checkpoints the run and idempotency state in Firestore; and
-7. selects exactly one bounded response. In the minimum release, a confirmed
-   contradiction with no verified repair opens one reconciled GitHub issue in
-   the repository authorized through the GitHub App. A draft PR remains blocked
-   until an isolated red-before/green-after verifier proves the exact candidate.
+7. selects exactly one bounded response. For the locked iPromise repair, a fixed
+   Cloud Build program must prove the expected failing baseline, green hidden
+   control, green regression suite, source provenance, and exact candidate tree
+   before the agent uploads those same bytes to one reconciled draft PR. Any failed
+   or unavailable gate routes to an evidence-backed issue instead.
 
 The reference workflow deliberately leaves one analytics record active so the
 agent has a real contradiction to detect. All identities and records are
@@ -64,9 +66,13 @@ does not claim that a company is legally compliant or in violation.
   leases, OAuth state, selected repositories, and finding receipts.
 - **Secret Manager** provides pinned, service-scoped runtime secrets.
 - **Cloud Logging** records a structured receipt correlated by run ID.
+- **Cloud Build** runs the fixed red-before/green-after verifier as a dedicated
+  minimal identity and returns the durable build/log receipt. It has outbound
+  source/dependency access; the exact candidate supplies no commands or URLs.
 - A **least-privilege GitHub App** verifies installation ownership, lists only
   authorized repositories, mints a short-lived repository-scoped token, and
-  reconciles a stable finding marker before creating an issue.
+  reconciles an exact-repair branch/marker before opening a draft PR, or a stable
+  finding marker before creating an issue fallback.
 - A **Next.js** Promise Ledger presents the exact claim, evidence, selected
   action, and technical activity without a chat interface.
 
@@ -94,8 +100,9 @@ approved controls, observations, verdicts, and publication gates deterministic.
 
 External idempotency was another important lesson. A local retry lock is not
 enough once Cloud Run can restart or GitHub can accept a request whose response
-is lost. iPromise uses Firestore leases plus a stable hidden finding marker and
-remote reconciliation so a retry can discover the action that already exists.
+is lost. iPromise uses Firestore leases plus stable issue and exact-repair
+fingerprints, deterministic branches, and remote reconciliation so a retry can
+discover the action that already exists.
 
 Finally, a smaller truthful claim is stronger than a universal compliance pitch.
 The MVP connects to repositories authorized through the App, but it executes one
@@ -126,10 +133,11 @@ Delete this section from the public listing only after all items are verified:
 - [ ] A live run records `modelInvoked: true`, Google ADK, the eligible Gemini
       model ID, and the Cloud Run revision.
 - [ ] The hosted console works from a clean browser using the private judge code.
-- [ ] One authorized GitHub repository receives exactly one real reconciled
-      issue (and, for the winning path, one independently verified draft PR).
-- [ ] The same run ID is visible in the console, Firestore, Cloud Logging, and
-      GitHub artifact.
+- [ ] The fixed authorized iPromise repository receives exactly one real,
+      independently verified and reconciled draft PR; a forced verifier failure
+      proves the issue fallback without creating a PR.
+- [ ] The same run ID is visible in the console, Firestore, Cloud Build,
+      Cloud Logging, and GitHub artifact.
 - [ ] The architecture diagram matches the deployed system.
 - [ ] The public video is in English, no longer than four minutes, shows the
       working application, and visibly proves the Google Cloud backend.

@@ -104,7 +104,7 @@ export function createDemonstrationRun(
         title: "Verify repair",
         detail: "Not run · verification unavailable",
         at: isoAt(now, 640),
-        system: "Isolated verifier",
+        system: "Cloud Build verifier",
         artifactRef: null,
       },
       {

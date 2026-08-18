@@ -6,11 +6,17 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 from uuid import uuid4
 
 import httpx
 
 from .actions import plan_actions
+from .cloudbuild_verifier import (
+    CloudBuildVerifier,
+    CloudBuildVerifierConfig,
+    VerifierBackend,
+)
 from .compiler import (
     AdkVertexClaimCompiler,
     ClaimCompilationError,
@@ -22,8 +28,10 @@ from .control import AccountDeletionControl, can_bind_account_deletion
 from .demo_client import HttpReferenceClient, ReferenceClient
 from .github import (
     GitHubIntegrationError,
+    GitHubPublicationRejected,
     GitHubPublishUncertain,
     GitHubService,
+    RepositorySourceSnapshot,
 )
 from .models import (
     ActionKind,
@@ -39,10 +47,18 @@ from .models import (
     RuntimeInfo,
     GitHubRepository,
     Testability,
+    VerifiedCandidateCheckpoint,
     Verdict,
     utc_now,
 )
-from .remediation import propose_bounded_remediation, unverified_mvp_receipt
+from .remediation import (
+    ALLOWED_REMEDIATION_PATHS,
+    BoundedRemediationError,
+    build_bounded_remediation_artifact,
+    propose_bounded_remediation,
+    unavailable_verification_receipt,
+    unverified_mvp_receipt,
+)
 from .source import CapturedSource, exact_quote_is_grounded
 from .state_machine import fail_run, finish_stage, start_stage
 from .store import InMemoryRunStore, RunStore
@@ -52,19 +68,45 @@ logger = logging.getLogger("ipromise.audit")
 logger.setLevel(logging.INFO)
 
 MAX_RUN_ATTEMPTS = 3
-RUN_LEASE_SECONDS = 5 * 60
-ACTION_LEASE_SECONDS = 5 * 60
+# The execution claim outlives the 900-second HTTP request envelope, preventing a
+# redelivery from overlapping a worker that is still being cancelled by Cloud Run.
+RUN_LEASE_SECONDS = 20 * 60
+ACTION_LEASE_SECONDS = 15 * 60
 
 
 class _ExternalActionCheckpointError(RuntimeError):
     """A confirmed external action could not be checkpointed on the run."""
 
-    def __init__(self, *, issue_number: int, issue_url: str) -> None:
-        super().__init__(
-            f"GitHub issue #{issue_number} was confirmed, but its run checkpoint failed"
+    def __init__(
+        self,
+        *,
+        action_kind: ActionKind,
+        action_number: int,
+        action_url: str,
+    ) -> None:
+        label = (
+            "GitHub draft PR"
+            if action_kind == ActionKind.PULL_REQUEST
+            else "GitHub issue"
         )
-        self.issue_number = issue_number
-        self.issue_url = issue_url
+        super().__init__(
+            f"{label} #{action_number} was confirmed, but its run checkpoint failed"
+        )
+        self.action_kind = action_kind
+        self.action_number = action_number
+        self.action_url = action_url
+
+
+class _CompletionCheckpointError(RuntimeError):
+    """The final COMPLETE checkpoint failed after prior state was durable."""
+
+
+class RemediationSource(Protocol):
+    async def capture_repository_files(
+        self,
+        target: GitHubRepository,
+        paths: tuple[str, ...],
+    ) -> RepositorySourceSnapshot: ...
 
 
 class AuditService:
@@ -76,6 +118,8 @@ class AuditService:
         reference_client: ReferenceClient | None = None,
         compiler: ClaimCompiler | None = None,
         github_service: GitHubService | None = None,
+        verifier: VerifierBackend | None = None,
+        remediation_source: RemediationSource | None = None,
     ) -> None:
         self.settings = settings
         if store is not None:
@@ -92,6 +136,8 @@ class AuditService:
         )
         self.compiler = compiler or self._configured_compiler()
         self.github = github_service or GitHubService(settings)
+        self.verifier = verifier or self._configured_verifier()
+        self.remediation_source = remediation_source or self.github
         self.control = AccountDeletionControl(self.reference_client)
         self._create_lock = asyncio.Lock()
         self._executions: dict[str, asyncio.Task[AuditRun]] = {}
@@ -100,6 +146,22 @@ class AuditService:
         if self.settings.compiler == "adk":
             return AdkVertexClaimCompiler(self.settings.gemini_model)
         return DeterministicDemonstrationCompiler()
+
+    def _configured_verifier(self) -> VerifierBackend | None:
+        if self.settings.verifier_backend != "cloud-build":
+            return None
+        if (
+            self.settings.cloud_build_project is None
+            or self.settings.cloud_build_service_account is None
+        ):
+            raise ValueError("Cloud Build verifier configuration is incomplete")
+        return CloudBuildVerifier(
+            CloudBuildVerifierConfig(
+                project_id=self.settings.cloud_build_project,
+                location=self.settings.cloud_build_location,
+                service_account=self.settings.cloud_build_service_account,
+            )
+        )
 
     async def create_run(
         self, request: CreateRunRequest, *, idempotency_key: str | None = None
@@ -204,8 +266,32 @@ class AuditService:
                     else "requires operator reconciliation"
                 )
                 run.limitations[-1] = (
-                    f"GitHub issue #{exc.issue_number} is confirmed at "
-                    f"{exc.issue_url}, but the run checkpoint {recovery}."
+                    f"GitHub {exc.action_kind.value.replace('_', ' ')} "
+                    f"#{exc.action_number} is confirmed at {exc.action_url}, "
+                    f"but the run checkpoint {recovery}."
+                )
+                await self.store.save(run)
+                return run
+            except _CompletionCheckpointError as exc:
+                self._fail_retryable(
+                    run,
+                    detail=str(exc),
+                    side_effects_uncertain=True,
+                )
+                opened_action = next(
+                    (
+                        action
+                        for action in run.actions
+                        if action.state == ActionState.OPENED and action.url is not None
+                    ),
+                    None,
+                )
+                run.limitations[-1] = (
+                    "The external action receipt is confirmed and will not be "
+                    "republished; only the final run checkpoint needs a retry."
+                    if opened_action is not None
+                    else "The final run checkpoint needs a retry; no external action "
+                    "was dispatched."
                 )
                 await self.store.save(run)
                 return run
@@ -416,30 +502,96 @@ class AuditService:
                     run,
                     RunStatus.REMEDIATING,
                     title="Propose repair",
-                    detail="Only one approved source path may change",
+                    detail="Only the approved source and regression-test paths may change",
                     system="Remediation policy",
                 )
-                run.remediation = propose_bounded_remediation(run)
-                finish_stage(run, "One file edit proposed")
+                artifact = None
+                preparation_error: str | None = None
+                if (
+                    self.verifier is not None
+                    and run.repository is not None
+                ):
+                    try:
+                        snapshot = await self.remediation_source.capture_repository_files(
+                            run.repository,
+                            ALLOWED_REMEDIATION_PATHS,
+                        )
+                        artifact = build_bounded_remediation_artifact(
+                            base_reference=snapshot.base_sha,
+                            preimages=snapshot.preimages,
+                        )
+                    except (GitHubIntegrationError, BoundedRemediationError) as exc:
+                        preparation_error = (
+                            "Bounded candidate preparation was unavailable "
+                            f"({type(exc).__name__}); draft PR publication remains blocked."
+                        )
+                    except Exception as exc:
+                        preparation_error = (
+                            "Bounded candidate preparation stopped safely "
+                            f"({type(exc).__name__}); draft PR publication remains blocked."
+                        )
+                run.remediation = propose_bounded_remediation(
+                    run,
+                    base_reference=(
+                        artifact.base_sha
+                        if artifact is not None
+                        else "not-captured-for-this-run"
+                    ),
+                )
+                finish_stage(
+                    run,
+                    (
+                        "Exact two-file candidate bound to immutable source"
+                        if artifact is not None
+                        else "Bounded repair recorded; exact candidate unavailable"
+                    ),
+                )
                 await self.store.save(run)
 
                 start_stage(
                     run,
                     RunStatus.VERIFYING,
                     title="Verify repair",
-                    detail="Require isolated fail-before/pass-after proof",
+                    detail="Require Cloud Build fail-before/pass-after proof",
                     system="Verification gate",
                 )
-                run.verification = unverified_mvp_receipt()
+                if artifact is not None and self.verifier is not None:
+                    try:
+                        outcome = await self.verifier.verify(artifact)
+                        run.verification = outcome.to_verification_receipt()
+                        if outcome.publishable and outcome.candidate is not None:
+                            run.checkpoint_verified_candidate(
+                                VerifiedCandidateCheckpoint.from_verified_candidate(
+                                    outcome.candidate
+                                )
+                            )
+                        else:
+                            run.checkpoint_verified_candidate(None)
+                    except Exception as exc:
+                        run.checkpoint_verified_candidate(None)
+                        run.verification = unavailable_verification_receipt(
+                            "The Cloud Build verifier stopped safely "
+                            f"({type(exc).__name__}); draft PR publication remains blocked."
+                        )
+                elif preparation_error is not None:
+                    run.verification = unavailable_verification_receipt(
+                        preparation_error
+                    )
+                else:
+                    run.verification = unverified_mvp_receipt()
                 finish_stage(
                     run,
-                    "Not run · draft PR blocked",
+                    (
+                        "Verified exact candidate · draft PR authorized"
+                        if run.verification.publishable
+                        else "Verification unavailable or rejected · issue fallback selected"
+                    ),
                 )
                 await self.store.save(run)
 
             await self._route_and_complete(run)
             return run
-        except _ExternalActionCheckpointError:
+        except (_ExternalActionCheckpointError, _CompletionCheckpointError):
             raise
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             run.verdict = Verdict.INCONCLUSIVE
@@ -453,12 +605,15 @@ class AuditService:
             run.runtime.model_invoked = exc.model_invoked
             run.runtime.model = exc.model
             run.verdict = Verdict.INCONCLUSIVE
-            fail_run(
-                run,
-                RunStatus.FAILED_SAFE,
-                detail=str(exc),
-                retryable=False,
-            )
+            if exc.retryable:
+                self._fail_retryable(run, detail=str(exc))
+            else:
+                fail_run(
+                    run,
+                    RunStatus.FAILED_SAFE,
+                    detail=str(exc),
+                    retryable=False,
+                )
         except Exception as exc:  # fail closed; no untrusted exception detail is exposed
             run.verdict = Verdict.INCONCLUSIVE
             fail_run(
@@ -500,21 +655,48 @@ class AuditService:
         ):
             await self._complete_run(run)
             return run
-        opened_issue = next(
+        opened_action = next(
             (
                 action
                 for action in run.actions
-                if action.kind == ActionKind.ISSUE
+                if action.kind in {ActionKind.PULL_REQUEST, ActionKind.ISSUE}
                 and action.state == ActionState.OPENED
                 and action.url is not None
             ),
             None,
         )
-        if opened_issue is not None:
-            finish_stage(run, "Confirmed GitHub issue receipt preserved")
+        if opened_action is not None:
+            finish_stage(
+                run,
+                "Confirmed GitHub "
+                f"{opened_action.kind.value.replace('_', ' ')} receipt preserved",
+            )
             await self.store.save(run)
             await self._complete_run(run)
             return run
+
+        selected_pr = next(
+            (
+                action
+                for action in run.actions
+                if action.kind == ActionKind.PULL_REQUEST
+                and action.state == ActionState.READY
+            ),
+            None,
+        )
+        if selected_pr is not None:
+            if (
+                self.settings.github_actions_enabled
+                and run.repository is not None
+                and run.verified_candidate is not None
+            ):
+                return await self._dispatch_pr_with_lease(run, selected_pr)
+            self._select_issue_fallback(
+                run,
+                "Verified draft PR could not be dispatched because its exact "
+                "candidate, repository, or external-action configuration was unavailable.",
+            )
+            await self.store.save(run)
 
         selected_issue = next(
             (
@@ -541,6 +723,102 @@ class AuditService:
 
         await self._complete_run(run)
         return run
+
+    async def _dispatch_pr_with_lease(
+        self, run: AuditRun, selected_pr: PlannedAction
+    ) -> AuditRun:
+        owner = f"worker_{uuid4().hex}"
+        acquired = await self.store.acquire_action_lease(
+            run.id,
+            selected_pr.id,
+            owner,
+            lease_seconds=ACTION_LEASE_SECONDS,
+        )
+        if not acquired:
+            current = await self.store.get(run.id)
+            return current if current is not None else run
+
+        fallback_reason: str | None = None
+        try:
+            candidate = run.verified_candidate
+            if candidate is None:
+                fallback_reason = "The verified candidate checkpoint was unavailable."
+            else:
+                try:
+                    receipt = await self.github.publish_draft_pull_request(
+                        run,
+                        selected_pr,
+                        candidate,
+                    )
+                except GitHubPublicationRejected as exc:
+                    fallback_reason = (
+                        f"Draft PR publication was rejected by a safety gate: {exc}"
+                    )
+                except GitHubPublishUncertain as exc:
+                    self._fail_retryable(
+                        run,
+                        detail=str(exc),
+                        side_effects_uncertain=True,
+                    )
+                    await self.store.save(run)
+                    return run
+                except GitHubIntegrationError as exc:
+                    fail_run(
+                        run,
+                        RunStatus.FAILED_SAFE,
+                        detail=str(exc),
+                        retryable=False,
+                    )
+                    await self.store.save(run)
+                    return run
+                else:
+                    selected_pr.state = ActionState.OPENED
+                    selected_pr.url = receipt.url
+                    selected_pr.reason = (
+                        "Existing exact draft PR reconciled"
+                        if receipt.reconciled
+                        else "Verified exact candidate published as a draft with no merge authority"
+                    )
+                    finish_stage(run, f"GitHub draft PR #{receipt.number} opened")
+                    try:
+                        await self.store.save(run)
+                    except Exception as exc:
+                        raise _ExternalActionCheckpointError(
+                            action_kind=ActionKind.PULL_REQUEST,
+                            action_number=receipt.number,
+                            action_url=receipt.url,
+                        ) from exc
+                    await self._complete_run(run)
+                    return run
+        finally:
+            try:
+                await asyncio.shield(
+                    self.store.release_action_lease(run.id, selected_pr.id, owner)
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to release action lease",
+                    extra={"runId": run.id, "actionId": selected_pr.id},
+                )
+
+        self._select_issue_fallback(
+            run,
+            fallback_reason or "Draft PR publication was not safely available.",
+        )
+        await self.store.save(run)
+        return await self._dispatch_and_complete(run)
+
+    @staticmethod
+    def _select_issue_fallback(run: AuditRun, reason: str) -> None:
+        pull_request = next(
+            action for action in run.actions if action.kind == ActionKind.PULL_REQUEST
+        )
+        issue = next(action for action in run.actions if action.kind == ActionKind.ISSUE)
+        pull_request.state = ActionState.BLOCKED
+        pull_request.verified = False
+        pull_request.reason = reason
+        issue.state = ActionState.PLANNED
+        issue.reason = "A verified draft PR was not safely publishable; issue fallback selected."
 
     async def _dispatch_issue_with_lease(
         self, run: AuditRun, selected_issue: PlannedAction
@@ -588,8 +866,9 @@ class AuditService:
                 await self.store.save(run)
             except Exception as exc:
                 raise _ExternalActionCheckpointError(
-                    issue_number=receipt.number,
-                    issue_url=receipt.url,
+                    action_kind=ActionKind.ISSUE,
+                    action_number=receipt.number,
+                    action_url=receipt.url,
                 ) from exc
             await self._complete_run(run)
             return run
@@ -617,7 +896,24 @@ class AuditService:
             system="iPromise",
         )
         finish_stage(run, "Audit record saved")
-        await self.store.save(run)
+        try:
+            await self.store.save(run)
+        except Exception as exc:
+            # COMPLETE is terminal in the public state machine. Restore the
+            # last durable routing checkpoint before handing the failure to the
+            # bounded retry path, otherwise fail_run would raise while trying
+            # to transition a terminal in-memory object.
+            run.status = RunStatus.ROUTING_ACTION
+            if (
+                run.events
+                and run.events[-1].stage == RunStatus.COMPLETE.value
+            ):
+                run.events[-1].state = EventState.FAILED
+                run.events[-1].detail = "Final run checkpoint was not persisted"
+            run.updated_at = utc_now()
+            raise _CompletionCheckpointError(
+                "Final run checkpoint could not be persisted"
+            ) from exc
 
     def _reset_interrupted_run(self, run: AuditRun) -> None:
         now = utc_now()
@@ -630,6 +926,7 @@ class AuditService:
         run.actions = []
         run.remediation = None
         run.verification = None
+        run.checkpoint_verified_candidate(None)
         run.synthetic_fixture_id = None
         run.updated_at = now
         run.events.append(
@@ -662,17 +959,20 @@ class AuditService:
 
     @staticmethod
     def _failed_during_action_dispatch(run: AuditRun) -> bool:
-        issue_states = {
+        action_states = {
             action.state
             for action in run.actions
-            if action.kind == ActionKind.ISSUE
+            if action.kind in {ActionKind.PULL_REQUEST, ActionKind.ISSUE}
         }
         return bool(
-            ActionState.OPENED in issue_states
+            ActionState.OPENED in action_states
             or (
                 run.events
                 and run.events[-1].stage == RunStatus.ROUTING_ACTION.value
-                and ActionState.PLANNED in issue_states
+                and bool(
+                    action_states
+                    & {ActionState.READY, ActionState.PLANNED}
+                )
             )
         )
 
