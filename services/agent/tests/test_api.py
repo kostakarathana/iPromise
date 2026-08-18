@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -17,6 +18,7 @@ from ipromise_agent.service import (
     ACTION_LEASE_SECONDS,
     RUN_LEASE_SECONDS,
     AuditService,
+    configure_audit_logging,
 )
 
 from conftest import FakeReferenceClient, make_service
@@ -50,6 +52,33 @@ def with_split_auth(settings):
         google_oidc_audience=SCHEDULER_AUDIENCE,
         scheduler_service_account=SCHEDULER_SERVICE_ACCOUNT,
     )
+
+
+def test_cloud_runtime_configures_one_plain_stdout_audit_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audit_logger = logging.getLogger("ipromise.audit")
+    original_handlers = list(audit_logger.handlers)
+    original_propagate = audit_logger.propagate
+    monkeypatch.setenv("K_SERVICE", "ipromise-agent")
+
+    try:
+        audit_logger.handlers.clear()
+        audit_logger.propagate = True
+        configure_audit_logging()
+        configure_audit_logging()
+
+        assert len(audit_logger.handlers) == 1
+        handler = audit_logger.handlers[0]
+        assert handler.get_name() == "ipromise-cloud-stdout"
+        assert handler.level == logging.INFO
+        assert handler.formatter is not None
+        assert handler.formatter._fmt == "%(message)s"
+        assert audit_logger.propagate is False
+    finally:
+        audit_logger.handlers.clear()
+        audit_logger.handlers.extend(original_handlers)
+        audit_logger.propagate = original_propagate
 
 
 class _OnceUnavailableReference(FakeReferenceClient):

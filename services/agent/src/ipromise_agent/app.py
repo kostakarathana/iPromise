@@ -32,12 +32,18 @@ from .models import (
     GitHubRepositorySelection,
     RunStatus,
 )
-from .service import ACTION_LEASE_SECONDS, RUN_LEASE_SECONDS, AuditService
+from .service import (
+    ACTION_LEASE_SECONDS,
+    RUN_LEASE_SECONDS,
+    AuditService,
+    configure_audit_logging,
+)
 
 
 def create_app(
     *, settings: Settings | None = None, service: AuditService | None = None
 ) -> FastAPI:
+    configure_audit_logging()
     resolved_settings = settings or Settings.from_env()
     resolved_service = service or AuditService(settings=resolved_settings)
     app = FastAPI(

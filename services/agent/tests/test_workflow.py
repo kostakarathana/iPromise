@@ -301,6 +301,7 @@ async def test_terminal_run_emits_correlated_structured_receipt(
         and '"event":"ipromise.audit.receipt"' in record.message
     ]
     assert receipts[-1]["runId"] == run.id
+    assert receipts[-1]["severity"] == "INFO"
     assert receipts[-1]["status"] == "COMPLETE"
     assert receipts[-1]["verdict"] == "CONTRADICTED"
     assert receipts[-1]["controlId"] == "privacy.account_deletion.v1"
