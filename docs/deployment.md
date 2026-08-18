@@ -300,9 +300,9 @@ deploy` returned successfully.
    export IPROMISE_DEPLOYED_DEMO_URL=https://DEMO_HOST
 
    curl --fail --silent --show-error \
-     "$IPROMISE_DEPLOYED_DEMO_URL/healthz"
+     "$IPROMISE_DEPLOYED_DEMO_URL/health"
    curl --fail --silent --show-error \
-     "$IPROMISE_DEPLOYED_AGENT_URL/healthz"
+     "$IPROMISE_DEPLOYED_AGENT_URL/health"
    curl --fail --silent --show-error \
      "$IPROMISE_DEPLOYED_CONSOLE_URL/api/health"
    ```

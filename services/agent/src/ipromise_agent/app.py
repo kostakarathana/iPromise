@@ -128,6 +128,7 @@ def create_app(
             },
         )
 
+    @app.get("/health", tags=["system"])
     @app.get("/healthz", tags=["system"])
     async def health() -> dict[str, str | bool]:
         return {
