@@ -52,20 +52,25 @@ their licenses and attribution requirements when the repository becomes public.
 
 ## External systems
 
-The deployed actions-off baseline has a correlated Cloud Run, Google ADK,
-Gemini 3.5 Flash, Firestore, Scheduler, and Cloud Logging receipt:
-`run_14a197bafd1d4a44a248e67320092d16`. The project also includes a GitHub App
-connection, issue fallback, Cloud Build verifier adapter, and exact-byte draft-PR
-publisher, but no live Cloud Build or GitHub workflow receipt has yet been
-captured. Tests use controlled in-process gateways for those external APIs. The
-executable repair is locked to the public
-entrant-owned iPromise repository and one exact two-file template; general
-repository repair is not claimed. The final submission may act only on an
-entrant-authorized installation, and both the verifier backend and GitHub action
-flag default off. Email is not implemented. Record the authorized demo repository
-and real receipts here before submission.
+The deployed vertical slice has correlated Cloud Run, Google ADK,
+`gemini-3.5-flash` through Vertex AI at `global`, Firestore, Cloud Scheduler,
+Cloud Logging, Cloud Build, and GitHub receipts. Ten consecutive actions-off
+verifier runs passed against frozen base
+`b5c2badacc506b78c6eed314f155ecbc2188198b`; their unique run, build, and
+synthetic-fixture identifiers are recorded in [evaluation](evaluation.md). After
+that gate, run `run_806d1fc144344baebb757747d1b56e83` and build
+`f4cbf983-db73-4bf5-9504-93c253a4b98b` opened verified draft
+[PR #7](https://github.com/kostakarathana/iPromise/pull/7).
+
+The GitHub App is installed only on `kostakarathana/iPromise`, with Metadata read
+and Contents, Pull requests, and Issues read/write. Duplicate proof reconciled a
+same-key replay and a distinct occurrence of the unchanged repair to PR #7,
+leaving one branch, one open draft PR, and zero issues. The executable repair is
+still locked to that public entrant-owned repository and one exact two-file
+template; general repository repair is not claimed. Email is not implemented.
+Cloud Scheduler is paused after proof.
 
 Google Cloud runtime services and Gemini output were generated for this entry
-against original synthetic data. No project may be described as externally
-actioning until a correlated Cloud Build and GitHub receipt exists in the
-[evidence matrix](evidence-matrix.md).
+against original synthetic data. These receipts prove only the documented scoped
+control; they are not evidence of legal or blanket product compliance. Devpost has
+not been submitted.

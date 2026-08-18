@@ -1,9 +1,10 @@
 # iPromise architecture
 
-Status: the actions-off Cloud Run, Google ADK, Gemini 3.5 Flash, Firestore,
-Scheduler, Secret Manager, and Cloud Logging baseline is deployed with correlated
-run proof. The verifier-to-draft-PR path is integrated and tested locally; live
-Cloud Build and GitHub workflow proof remains pending. See [implementation
+Status: the Cloud Run, Google ADK, Gemini 3.5 Flash, Firestore, Cloud Scheduler,
+Secret Manager, Cloud Logging, Cloud Build, and GitHub draft-PR vertical slice is
+deployed with correlated live proof. Ten consecutive actions-off verifier runs,
+one verified draft PR, and remote duplicate reconciliation passed on 2026-08-18
+AEST. Scheduler is intentionally paused after proof. See [implementation
 status](implementation-status.md).
 
 iPromise is a scheduled promise-to-proof-to-action workflow. It is designed for the

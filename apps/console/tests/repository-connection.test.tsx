@@ -102,7 +102,9 @@ describe("Repository connection", () => {
       body: JSON.stringify({ repositoryId: 202 }),
     });
     expect(
-      screen.getByText("Issue creation is enabled for this repository."),
+      screen.getByText(
+        "Verified draft PRs and fallback issues are enabled for this repository.",
+      ),
     ).toBeVisible();
   });
 

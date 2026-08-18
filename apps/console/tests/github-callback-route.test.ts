@@ -34,7 +34,7 @@ describe("GitHub OAuth callback", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "https://ipromise.example/?github=connected",
+      "/?github=connected",
     );
     expect(mocks.completeGitHubOAuth).toHaveBeenCalledWith({
       code: "code",
@@ -51,7 +51,7 @@ describe("GitHub OAuth callback", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "https://ipromise.example/?github=cancelled",
+      "/?github=cancelled",
     );
     expect(mocks.completeGitHubOAuth).not.toHaveBeenCalled();
   });
@@ -69,7 +69,36 @@ describe("GitHub OAuth callback", () => {
     const location = response.headers.get("location") ?? "";
 
     expect(response.status).toBe(303);
-    expect(location).toBe("https://ipromise.example/?github=error");
+    expect(location).toBe("/?github=error");
     expect(location).not.toContain("secret");
+  });
+
+  it("does not expose a Cloud Run container origin or trust proxy host headers", async () => {
+    const response = await GET(
+      new Request(
+        "https://0.0.0.0:8080/api/integrations/github/callback?code=code&state=state",
+        {
+          headers: {
+            host: "0.0.0.0:8080",
+            "x-forwarded-host": "attacker.example",
+            "x-forwarded-proto": "https",
+          },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/?github=connected");
+  });
+
+  it("keeps local development callbacks on the current browser origin", async () => {
+    const response = await GET(
+      new Request(
+        "http://127.0.0.1:3000/api/integrations/github/callback?error=access_denied",
+      ),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/?github=cancelled");
   });
 });

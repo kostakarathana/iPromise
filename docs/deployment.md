@@ -1,8 +1,53 @@
 # Minimum Google Cloud deployment
 
-Status: deployment procedure only. The existence of these files is **not** proof
-that iPromise has been deployed, invoked Gemini, or completed an external action.
-Those claims require the receipts listed below.
+Status: deployed and live-proofed on **2026-08-18 AEST**. This file remains the
+reproduction procedure; deployment claims come from the exact receipts recorded
+below, not from configuration files alone.
+
+## Current verified deployment
+
+- Judge console: `https://ipromise-console-ipj6vqlg2q-uc.a.run.app`
+- Authenticated agent endpoint:
+  `https://ipromise-agent-ipj6vqlg2q-uc.a.run.app`
+- Synthetic reference SaaS:
+  `https://ipromise-demo-saas-ipj6vqlg2q-uc.a.run.app`
+- Current agent revision: `ipromise-agent-00007-8p9`
+- Live health: console `/api/health`, agent `/health`, and synthetic SaaS `/health`
+  each returned HTTP 200; `/healthz` is not the deployed Cloud Run probe path
+- Model/framework: `gemini-3.5-flash` through Vertex AI at `global`, coordinated
+  by Google ADK
+- State/infrastructure: Cloud Run, Firestore, Cloud Scheduler, Cloud Build,
+  Secret Manager, and Cloud Logging
+- Trigger safety: the six-hour Cloud Scheduler job is **PAUSED** after the proof
+  sequence
+- External-action configuration: enabled on the current agent revision for the
+  bounded draft-PR/issue publisher; the paused Scheduler prevents unattended runs
+- Repository authority: GitHub App `ipromise-promise-auditor`, installed only on
+  `kostakarathana/iPromise`, with Metadata read and Contents, Pull requests, and
+  Issues read/write; no Actions, Workflows, Administration, Secrets, or
+  Deployments permission. The implemented publisher exposes no merge or deploy
+  operation and creates draft PRs only.
+
+Against frozen base `b5c2badacc506b78c6eed314f155ecbc2188198b`, ten
+consecutive actions-off audits completed in 448.5 seconds. Every run produced a
+unique run, Cloud Build, and synthetic fixture ID; expected `FAIL / PASS / PASS`;
+an exact candidate-tree match; and a publishable receipt. The complete identifiers
+are recorded in the [measured evaluation](evaluation.md#measured-deployed-release-result).
+No GitHub write occurred during this reliability gate.
+
+After the gate, controlled run `run_806d1fc144344baebb757747d1b56e83`
+used build `f4cbf983-db73-4bf5-9504-93c253a4b98b` and opened verified draft
+[PR #7](https://github.com/kostakarathana/iPromise/pull/7) through the App.
+Same-key run `run_60edca0afdd34918805f72464662b340` and distinct run
+`run_6babae8849fc46fca2d522caf3e2ce98`, with builds
+`75a9e18b-766f-48e4-ad10-06b52cac0025` and
+`5e77604a-5f19-4be3-9988-48809c48125c`, both reconciled to that same PR. Final
+checks found one deterministic branch, one open draft PR, zero issues, zero
+nonterminal Firestore runs, and no execution or action leases.
+
+The proof uses only the owned synthetic reference SaaS and a locked two-file
+repair. It is evidence for that scoped control, not a legal or blanket compliance
+claim. Devpost has **not** been submitted.
 
 This procedure packages and deploys the smallest eligible Google Cloud slice:
 
@@ -83,9 +128,11 @@ environment files, build arguments, image layers, or source control.
   OAuth client ID. For the winning path grant repository **Contents: read and
   write**, **Pull requests: read and write**, **Issues: read and write** for the
   fallback, plus implicit Metadata read. Do not grant Actions, Workflows,
-  Administration, Secrets, merge, or deployment authority. Install it only on the
+  Administration, Secrets, or Deployments permission. Install it only on the
   entrant-owned demonstration repository and keep actions disabled until the live
-  permission review is complete.
+  permission review is complete. Because the required Contents/Pull requests
+  scopes can support broader GitHub operations, the implemented publisher must
+  remain draft-only and expose no merge or deploy operation.
 - Five distinct Secret Manager secrets with enabled versions:
   `ipromise-demo-token`, `ipromise-agent-api-token`,
   `ipromise-console-access-code`, `ipromise-github-client-secret`, and

@@ -1,7 +1,8 @@
 # iPromise threat model
 
-Status: issue fallback and the locked verifier-to-draft-PR path are implemented and
-tested locally with controlled external gateways. Live Cloud Build/GitHub receipts,
+Status: the locked verifier-to-draft-PR path has live Cloud Build and GitHub
+receipts, including same-key and distinct-run duplicate suppression. Issue fallback
+remains integration-tested but was not triggered in the successful live proof;
 Model Armor, generalized repository repair, artifact storage, and email remain
 pending and are not treated as current evidence.
 
@@ -67,8 +68,9 @@ code, or contacts customers.
 ## Action-specific controls
 
 The GitHub App is installed only on selected repositories, with short-lived,
-down-scoped tokens and no Administration, Actions, Secrets, merge, or deployment
-authority. The permissions design follows GitHub's
+down-scoped tokens and no Administration, Actions, Workflows, Secrets, or
+Deployments permission. The implemented publisher is draft-only and exposes no
+merge or deploy operation. The permissions design follows GitHub's
 [official guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app).
 
 The current integration can create draft PRs or issues and uses evidence-only

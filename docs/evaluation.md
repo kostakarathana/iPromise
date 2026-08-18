@@ -1,6 +1,58 @@
 # iPromise evaluation plan
 
-Status: plan only. No metric in this document is a measured result.
+Status: the core deployed reliability and duplicate-suppression gates were
+measured on **2026-08-18 AEST**. Model-quality targets remain unmeasured unless
+explicitly identified below.
+
+## Measured deployed release result
+
+The actions-off reliability gate ran against frozen base
+`b5c2badacc506b78c6eed314f155ecbc2188198b` on Cloud Run revision
+`ipromise-agent-00006-mhk`. All ten consecutive audits invoked
+`gemini-3.5-flash` through Vertex AI at `global` under Google ADK, detected the
+intended contradiction in a newly generated synthetic account, and completed the
+fixed seven-step Cloud Build verifier. Every result was `FAIL / PASS / PASS`
+(expected-red baseline / repaired hidden control / regression suite), matched the
+exact candidate tree, and was publishable. External GitHub actions were disabled,
+so these runs made no GitHub write.
+
+| # | Run ID | Cloud Build ID | Synthetic fixture ID | Elapsed |
+| ---: | --- | --- | --- | ---: |
+| 1 | `run_a999819bea874829bcf90faa0a849f88` | `e81aa206-d291-4462-9a1e-f44babf2c8fb` | `syn_6d80337d85efb53a37b31b0705e83a32` | 43.2s |
+| 2 | `run_636ba449ae3d4e28959d6eb3f90b9515` | `5b610aef-9031-4e17-9a31-a79d943f772e` | `syn_ca6506ebcbf1920b1e245348e326e4da` | 44.4s |
+| 3 | `run_d7e07084764c4104bfcc76d7d52ffe23` | `59325271-27ea-410e-9050-be285c71401c` | `syn_9863d8d30154d5c487c13f61c9fcad90` | 43.1s |
+| 4 | `run_f209803329314d759e7a266968d2c410` | `9d0d9357-d399-4822-bd11-26ca38adf11a` | `syn_06c2bfbb3130ee04e01704dde75c486b` | 45.7s |
+| 5 | `run_7219ae31093d4605964d2d5f7a103b43` | `9d602cca-30d3-48f6-80e1-37ed21c9219f` | `syn_5275569b0396b44b90de072134f9dca5` | 46.6s |
+| 6 | `run_37e5c97cd5384c848e10ab004f6f266b` | `c9cdb798-3fed-4cf1-9010-3f5959e78912` | `syn_64c1d1cd92068ad040f4e1330cf1b6c6` | 47.9s |
+| 7 | `run_be5036e28ceb4968835779940a398447` | `577091b1-c67e-4ab3-9eaa-08cbdf8122a3` | `syn_2c3d27c68115abe324dff81ca11e302a` | 43.5s |
+| 8 | `run_0ac5d1cb424246c5bef84eb9fd67d38f` | `e9154ac2-42c8-4f9b-93ce-fefa053c6377` | `syn_4c0369914e177f5f3b2a40ebed1c5c23` | 42.5s |
+| 9 | `run_7b509f3895d34511b25c661d01651c1e` | `963738a6-4a5c-4168-a55f-b8c764840388` | `syn_0cb2a6b55b06e36266ed512939520c5d` | 44.6s |
+| 10 | `run_700e3c629aec42e59069ba1c5542db2f` | `07a35e82-b380-4794-83c1-1244df32f4aa` | `syn_894a4acf06e9b669b862fc736da03196` | 47.0s |
+
+Result: **10/10 consecutive passes**, ten unique run IDs, ten unique Cloud Build
+IDs, ten unique synthetic fixture IDs, **448.5 seconds total**, 44.5-second median,
+and 47.9-second observed p95 under the nearest-rank convention. The last figure
+describes only this ten-run sample, not general production latency.
+
+After that gate, actions were enabled only for a controlled run on current agent
+revision `ipromise-agent-00007-8p9`. Run
+`run_806d1fc144344baebb757747d1b56e83`, build
+`f4cbf983-db73-4bf5-9504-93c253a4b98b`, opened verified draft
+[PR #7](https://github.com/kostakarathana/iPromise/pull/7) through the installed
+GitHub App. The deployed smoke then proved both idempotency layers:
+
+- same-key run `run_60edca0afdd34918805f72464662b340`, build
+  `75a9e18b-766f-48e4-ad10-06b52cac0025`, replayed as the same logical run and
+  reconciled to PR #7;
+- distinct run `run_6babae8849fc46fca2d522caf3e2ce98`, build
+  `5e77604a-5f19-4be3-9988-48809c48125c`, recognized the unchanged exact repair
+  and reconciled to PR #7 rather than opening another action.
+
+Post-proof checks found exactly one deterministic remote branch, one open draft
+PR, zero issues, zero nonterminal Firestore runs, and no execution or action
+leases. Cloud Scheduler remains **PAUSED**. These results use the owned synthetic
+reference SaaS and establish only the scoped account-deletion control; they do not
+establish legal or blanket product compliance.
 
 ## Evaluation principles
 
@@ -69,14 +121,18 @@ committed evaluation command and linked artifact rather than typed into this fil
 
 ## End-to-end release gates
 
-These are planned targets, not current results:
+Measured items are marked; the remainder are release targets:
 
-- Ten consecutive deployed demo-path runs complete without manual repair.
-- The live run stays below the Scheduler/Cloud Run timeout budget and below the
-  four-minute presentation budget; record actual median and p95 only after runs.
-- The same run ID is visible in the console, Firestore, Cloud Logging, evidence
-  manifest, verifier receipt, and draft PR.
-- A duplicate event produces exactly one PR.
+- **Passed:** ten consecutive deployed demo-path runs completed without manual
+  repair.
+- **Passed for backend timeout:** the ten-run median was 44.5 seconds and observed
+  p95 was 47.9 seconds, well inside the Cloud Run request envelope. The final
+  four-minute recorded presentation remains pending.
+- **Partially passed:** the external-action run is correlated across the persisted
+  run, verifier receipt, and draft PR. Capture the same run in the final console
+  and Cloud Logging video proof.
+- **Passed:** same-key replay and a distinct occurrence of the unchanged finding
+  both produced exactly one remote PR in total.
 - An unsafe candidate and incomplete evidence both fail closed.
 - A fresh-machine setup rehearsal follows the final README successfully.
 - The implemented Cloud Build verifier completes repeated deployed runs within its

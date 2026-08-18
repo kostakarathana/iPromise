@@ -54,7 +54,7 @@ function actionStatus(status: GitHubIntegrationStatus | null): string {
   if (!status.selectedRepository) {
     return "Select a repository before running an action-ready audit.";
   }
-  return "Issue creation is enabled for this repository.";
+  return "Verified draft PRs and fallback issues are enabled for this repository.";
 }
 
 function callbackErrorFromLocation(): string | null {

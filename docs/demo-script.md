@@ -5,8 +5,10 @@ practical. The binding limit is four minutes under the
 [official rules](https://allthingsagentichackathon.devpost.com/rules); only the
 first four minutes should be assumed judgeable.
 
-Status: planned script. Replace all placeholders and rehearse against the frozen
-deployed build before recording.
+Status: planned recording. The repeated Cloud Build, real draft-PR, and duplicate-
+suppression prerequisites are verified live; rehearse this script against the
+final frozen build before recording. Cloud Scheduler is currently **PAUSED** and
+must remain paused outside an explicitly controlled rehearsal.
 
 ## 0:00–0:25 — Hook and problem
 
@@ -101,7 +103,7 @@ distinct occurrence of the unchanged exact repair resolves to the same draft PR.
 ## 3:15–3:38 — Undeniable Google Cloud proof
 
 **Visual:** Show the `.run.app` application URL, then Cloud Run service and Cloud
-Logging filtered to the same run ID. Briefly show the Cloud Scheduler execution,
+Logging filtered to the same run ID. Briefly show the paused Cloud Scheduler job,
 Firestore run document, Vertex/ADK event, and Cloud Build log without exposing
 secrets.
 
@@ -136,11 +138,19 @@ secrets.
 
 ## Release condition before final recording
 
-The verifier-to-PR path is implemented and tested locally, but this script may be
-recorded as written only after repeated deployed Cloud Build runs and a real
-GitHub draft-PR receipt prove it. Until then, it is a plan, not evidence. If the
-verifier fails during a genuine run, show the truthful issue fallback and explain
-the failed gate; never substitute a precomputed receipt or imply that it was live.
+The verifier-to-PR prerequisite passed on 2026-08-18 AEST: ten consecutive
+actions-off Cloud Build runs completed the expected red/green/exact-tree gate;
+controlled run `run_806d1fc144344baebb757747d1b56e83` opened verified draft
+[PR #7](https://github.com/kostakarathana/iPromise/pull/7); and same-key plus
+distinct-run replay reconciled to that same PR without a duplicate. See the
+[measured evaluation](evaluation.md#measured-deployed-release-result).
+
+This is permission to rehearse and record, not evidence that the final video or
+submission is complete. The recording must use a controlled live run, preserve
+the synthetic-data disclosure, show the paused Scheduler state truthfully, and
+capture the same-run Cloud Console/Logging proof. If the verifier fails, show the
+truthful fallback and explain the failed gate; never substitute a precomputed
+receipt or imply that it was live.
 
 Keep a truthful fallback recording of the same frozen release. A fallback may
 show an earlier genuine run, clearly labeled with its timestamp; it may not imply

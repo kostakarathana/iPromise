@@ -10,20 +10,27 @@ The hackathon MVP focuses on one complete Taskmaster workflow: verifying an acco
 
 ## Status
 
-The actions-off baseline is deployed on Google Cloud. Correlated run
-`run_14a197bafd1d4a44a248e67320092d16` invoked Gemini 3.5 Flash through Google
-ADK on Cloud Run, exercised the synthetic product, persisted a scoped
-`CONTRADICTED` result in Firestore, and emitted the same run ID to Cloud Logging.
-The judge console is hosted at
-`https://ipromise-console-ipj6vqlg2q-uc.a.run.app`, and an authenticated
-Cloud Scheduler job is enabled every six hours.
+The complete vertical slice is deployed on Google Cloud. The judge console is
+hosted at `https://ipromise-console-ipj6vqlg2q-uc.a.run.app`; its authenticated
+agent endpoint is `https://ipromise-agent-ipj6vqlg2q-uc.a.run.app`. Current agent
+revision `ipromise-agent-00007-8p9` runs Google ADK with
+`gemini-3.5-flash` through Vertex AI's `global` location, persists state in
+Firestore, and uses Cloud Build for the fixed verifier. Cloud Scheduler is
+intentionally **PAUSED** after controlled proof runs, so it cannot create
+unattended external actions.
 
-The locked red-before/green-after Cloud Build verifier and exact-byte draft-PR
-publisher are implemented and covered by integration/adversarial tests using
-controlled gateways. They are **not yet live external-action evidence**. The
-remaining core release gate is a real Cloud Build verification receipt followed
-by one real reconciled draft PR. Verification and GitHub actions both default
-off. See the [truthful implementation status](docs/implementation-status.md).
+On base commit `b5c2badacc506b78c6eed314f155ecbc2188198b`, ten consecutive
+actions-off audits completed the full expected-red → green-control →
+green-regression gate in 448.5 seconds total. Every run reported the expected
+`FAIL / PASS / PASS`, an exact candidate tree, a publishable receipt, and unique
+run, build, and synthetic-fixture identities without writing to GitHub. After
+that safety gate, one controlled actions-on run opened the real, verified draft
+[PR #7](https://github.com/kostakarathana/iPromise/pull/7) through the scoped
+GitHub App. A same-key replay reused one logical run, and a distinct run for the
+unchanged finding reconciled to the same PR: one deterministic branch, one open
+draft PR, zero issues, and no unfinished Firestore runs or leases after proof.
+See the [truthful implementation status](docs/implementation-status.md) and
+[measured evaluation record](docs/evaluation.md).
 
 ## Winning workflow
 
@@ -164,6 +171,8 @@ environment.
 - No generated shell commands, automatic merges, or deployments
 - A finding never becomes success when evidence is unavailable
 - One visible run ID across the console, state ledger, logs, verification receipt, and external action
+- The Devpost entry has **not** been submitted; final video, frozen release, and
+  submission checks remain open
 
 See [AGENTS.md](AGENTS.md) for the binding project operating rules,
 [architecture](docs/architecture.md), and the

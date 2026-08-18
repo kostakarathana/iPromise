@@ -194,7 +194,7 @@ describe("Promise Dashboard presentation provenance", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("requires a selected repository when real issue creation is enabled", async () => {
+  it("requires a selected repository when external GitHub actions are enabled", async () => {
     const repository = {
       id: 101,
       fullName: "octocat/alpha",

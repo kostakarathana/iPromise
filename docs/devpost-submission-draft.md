@@ -1,9 +1,10 @@
 # Devpost submission draft
 
-Status: **working copy — do not submit until every final gate below has a real
-receipt.** The Cloud Run + ADK + Gemini + Firestore + Scheduler baseline is live;
-the verifier-to-PR path still has only local controlled-gateway proof. Last
-reviewed 2026-08-18 AEST.
+Status: **working copy — not submitted.** The deployed Cloud Run, ADK, Gemini,
+Firestore, Cloud Scheduler, Cloud Build, and GitHub draft-PR path has live proof,
+including ten consecutive verifier passes and duplicate suppression. Do not submit until
+the remaining video, access, rules, and release-freeze gates below are complete.
+Last reviewed 2026-08-18 AEST.
 
 ## Listing fields
 
@@ -131,14 +132,18 @@ Delete this section from the public listing only after all items are verified:
 
 - [ ] Every `REPLACE_WITH_*` placeholder and commit-pinned link is resolved.
 - [ ] The linked repository contains the tested source and a reproducible README.
-- [ ] A live run records `modelInvoked: true`, Google ADK, the eligible Gemini
+- [x] A live run records `modelInvoked: true`, Google ADK, the eligible Gemini
       model ID, and the Cloud Run revision.
-- [ ] The hosted console works from a clean browser using the private judge code.
-- [ ] The fixed authorized iPromise repository receives exactly one real,
-      independently verified and reconciled draft PR; a forced verifier failure
-      proves the issue fallback without creating a PR.
-- [ ] The same run ID is visible in the console, Firestore, Cloud Build,
-      Cloud Logging, and GitHub artifact.
+- [ ] The hosted console works from a clean judge-equivalent browser using the
+      private access code. The authenticated hosted workflow has been exercised,
+      but this final rehearsal remains.
+- [x] The fixed authorized iPromise repository received exactly one real,
+      independently verified and reconciled draft PR. Same-key and distinct-run
+      replay created no duplicate. A forced live verifier-failure issue fallback
+      remains optional evidence and has not been claimed.
+- [ ] The live action is correlated across the persisted run, Cloud Build, and
+      GitHub artifact; capture the same run visibly in the console and Cloud
+      Logging for the final video.
 - [ ] The architecture diagram matches the deployed system.
 - [ ] The public video is in English, no longer than four minutes, shows the
       working application, and visibly proves the Google Cloud backend.
