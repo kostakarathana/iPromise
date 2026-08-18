@@ -25,7 +25,7 @@ Required only for --apply:
 
 Optional environment:
   IPROMISE_GCP_REGION              default: us-central1
-  IPROMISE_GCP_LOCATION            default: IPROMISE_GCP_REGION
+  IPROMISE_GCP_LOCATION            default: global (Vertex AI model location)
   IPROMISE_GEMINI_MODEL            default: gemini-3.5-flash
   IPROMISE_VERIFIER_BACKEND        default: disabled
   IPROMISE_CLOUD_BUILD_LOCATION    default: australia-southeast1
@@ -75,7 +75,7 @@ esac
 
 project="${IPROMISE_GCP_PROJECT:-}"
 region="${IPROMISE_GCP_REGION:-us-central1}"
-location="${IPROMISE_GCP_LOCATION:-$region}"
+location="${IPROMISE_GCP_LOCATION:-global}"
 gemini_model="${IPROMISE_GEMINI_MODEL:-gemini-3.5-flash}"
 verifier_backend="${IPROMISE_VERIFIER_BACKEND:-disabled}"
 cloud_build_location="${IPROMISE_CLOUD_BUILD_LOCATION:-australia-southeast1}"
@@ -122,8 +122,8 @@ verifier_controller_role_id="ipromiseVerifierController"
   || die "IPROMISE_GCP_PROJECT is not a valid project ID"
 [[ "$region" =~ ^[a-z]+-[a-z]+[0-9]$ ]] \
   || die "IPROMISE_GCP_REGION is not a valid region"
-[[ "$location" =~ ^[a-z]+-[a-z]+[0-9]$ ]] \
-  || die "IPROMISE_GCP_LOCATION is not a valid regional Vertex AI location"
+[[ "$location" =~ ^(global|us|eu)$ ]] \
+  || die "IPROMISE_GCP_LOCATION must be global, us, or eu for Gemini 3.5 Flash Standard PayGo"
 [[ "$gemini_model" =~ ^[A-Za-z0-9._/-]+$ ]] \
   || die "IPROMISE_GEMINI_MODEL contains unsupported characters"
 [[ "$verifier_backend" =~ ^(cloud-build|disabled)$ ]] \
@@ -239,6 +239,7 @@ printf '  mode:       %s\n' "$mode"
 printf '  account:    %s\n' "$active_account"
 printf '  project:    %s\n' "$project"
 printf '  region:     %s\n' "$region"
+printf '  Vertex:     %s\n' "$location"
 printf '  model:      %s\n' "$gemini_model"
 printf '  verifier:   %s (%s)\n' "$verifier_backend" "$cloud_build_location"
 printf '  GitHub App: %s (%s; actions %s)\n' \

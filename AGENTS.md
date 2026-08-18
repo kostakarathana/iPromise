@@ -162,7 +162,7 @@ The listed cash pool is $180,000. It includes a $50,000 Grand Prize; $20,000 for
 - Product name: **iPromise**.
 - Core track: **Taskmaster**.
 - Core claim/control: a source-grounded account-deletion promise tested against synthetic application and analytics records.
-- Primary model: exact stable `gemini-3.5-flash` through Vertex AI, reconsidered only after a fixed documented evaluation.
+- Primary model: exact stable `gemini-3.5-flash` through Vertex AI at the `global` location, reconsidered only after a fixed documented evaluation. The model is not available in `us-central1`; keep the Cloud Run region and Vertex model location separate.
 - Agent framework: Google ADK with typed, mostly deterministic graph nodes.
 - Core Google Cloud services for the minimum: Cloud Run, Cloud Scheduler,
   Firestore, Secret Manager, Cloud Logging, and Vertex AI. Pub/Sub and Cloud
