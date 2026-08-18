@@ -170,7 +170,9 @@ authenticated read-only checks and identifies the exact project and resources:
 ```bash
 export IPROMISE_GCP_PROJECT=your-dedicated-project-id
 export IPROMISE_GCP_REGION=us-central1
-export IPROMISE_GCP_LOCATION=us-central1
+# Vertex inference is independent from the Cloud Run region. Gemini 3.5 Flash
+# Standard PayGo supports global, us, or eu; this release uses global.
+export IPROMISE_GCP_LOCATION=global
 export IPROMISE_VERIFIER_BACKEND=disabled
 export IPROMISE_CLOUD_BUILD_LOCATION=australia-southeast1
 export IPROMISE_GITHUB_APP_ID=123456
