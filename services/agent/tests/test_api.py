@@ -65,6 +65,20 @@ class _OnceUnavailableReference(FakeReferenceClient):
 
 
 @pytest.mark.asyncio
+async def test_cloud_run_safe_health_alias(settings) -> None:
+    service, _ = make_service(settings)
+    app = create_app(settings=settings, service=service)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://agent.test"
+    ) as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["service"] == "ipromise-agent"
+
+
+@pytest.mark.asyncio
 async def test_api_matches_console_contract_and_supports_latest(settings) -> None:
     service, reference = make_service(settings)
     app = create_app(settings=settings, service=service)

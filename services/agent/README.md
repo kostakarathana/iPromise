@@ -34,7 +34,8 @@ curl -sS -X POST http://127.0.0.1:8080/v1/runs \
 
 API routes:
 
-- `GET /healthz`
+- `GET /health` (Cloud Run-safe health endpoint)
+- `GET /healthz` (local compatibility alias)
 - `POST /v1/runs` creates and completes an audit synchronously for the MVP.
 - `GET /v1/runs` lists runs newest first.
 - `GET /v1/runs/latest` returns the newest run.

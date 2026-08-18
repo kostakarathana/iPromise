@@ -87,6 +87,7 @@ def create_app(
                 detail="A valid synthetic-demo token is required",
             )
 
+    @app.get("/health", tags=["system"])
     @app.get("/healthz", tags=["system"])
     async def health() -> dict[str, str | bool]:
         return {
