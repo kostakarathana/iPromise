@@ -44,7 +44,7 @@ async def test_control_routes_require_demo_token() -> None:
     assert response.status_code == 401
 
 
-async def test_overdue_deletion_intentionally_leaves_analytics_record() -> None:
+async def test_overdue_deletion_removes_application_and_analytics_records() -> None:
     headers = {"X-iPromise-Demo-Token": TOKEN}
     async with _client() as client:
         seeded_response = await client.post(
@@ -74,7 +74,7 @@ async def test_overdue_deletion_intentionally_leaves_analytics_record() -> None:
     assert processed.json()["virtual_processing_elapsed_hours"] <= 24
     assert after["virtual_observation_elapsed_hours"] > 24
     assert after["profile_exists"] is False
-    assert after["analytics_profile_exists"] is True
+    assert after["analytics_profile_exists"] is False
     assert after["synthetic"] is True
 
 
