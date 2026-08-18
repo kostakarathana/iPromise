@@ -7,7 +7,8 @@ Usage: scripts/smoke-cloud https://CONSOLE_HOST
 
 Authenticates to the judge console, submits one audit twice with the same trigger
 key, then submits the unchanged finding under a distinct trigger key. It verifies
-one logical run for the replay and one reconciled GitHub issue across both runs.
+one logical run for the replay and one reconciled, verified GitHub draft PR across
+both runs.
 The access code is read without echo and is never placed in an argument,
 environment variable, or file.
 EOF
@@ -118,8 +119,26 @@ if len(opened) != 1 or len(replayed) != 1 or len(next_occurrence) != 1:
     raise SystemExit(
         "expected one opened action; connect a repository and explicitly enable actions"
     )
+if any(
+    action.get("kind") != "pull_request" or action.get("verified") is not True
+    for action in (opened[0], replayed[0], next_occurrence[0])
+):
+    raise SystemExit("expected one verified draft pull-request action")
 if len({opened[0]["url"], replayed[0]["url"], next_occurrence[0]["url"]}) != 1:
     raise SystemExit("reconciliation failed: unchanged finding returned another action")
+
+for run in (first, second, third):
+    receipt = run.get("verification") or {}
+    if not (
+        receipt.get("publishable") is True
+        and receipt.get("baselineControl") == "FAIL"
+        and receipt.get("candidateControl") == "PASS"
+        and receipt.get("regressionSuite") == "PASS"
+        and receipt.get("exactTreeVerified") is True
+        and receipt.get("buildId")
+        and str(receipt.get("logUrl", "")).startswith("https://")
+    ):
+        raise SystemExit("missing complete Cloud Build verification receipt")
 
 print(f"run:     {first['id']}")
 print(f"verdict: {first.get('verdict')}")

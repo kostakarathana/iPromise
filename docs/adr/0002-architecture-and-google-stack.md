@@ -26,8 +26,8 @@ Use the following target stack:
 | Evidence artifacts | Typed Firestore run record; private Cloud Storage is a later verifier artifact gate |
 | Capture | Exact server-rendered HTML text and content hash; browser capture is later hardening |
 | Untrusted-text screening | Strict model schema and deterministic grounding; Model Armor remains planned defense in depth |
-| Repair verification | Planned Cloud Run Sandbox/Cloud Build adapter; PR gate remains closed until shipped |
-| Repository action | Least-privilege GitHub App; issue fallback implemented, draft PR planned |
+| Repair verification | Integrated Cloud Build backend with fixed inline program and exact-template candidate; Cloud Run Sandbox remains a later reliability option |
+| Repository action | Least-privilege GitHub App; exact-byte draft PR primary, reconciled issue fallback |
 | Secrets | Secret Manager and per-service identities |
 | Telemetry | Structured Cloud Logging receipts; OpenTelemetry/Cloud Trace remains later hardening |
 
@@ -53,14 +53,20 @@ support a concrete verifier/artifact need.
 The scheduled and manual paths intentionally share the same event contract so the
 demo does not bypass the autonomous implementation.
 
-## Isolation contingency
+## Verifier decision
 
-Cloud Run Sandboxes are currently a Preview capability. They are selected for
-fast, no-egress, red-before/green-after execution, but they are not a single point
-of project failure. A `VerifierBackend` boundary must support Cloud Build without
-changing the agent graph or action policy. Sandboxes become the submission path
-only after repeated deployed end-to-end validation; otherwise Cloud Build is the
-primary verifier.
+The implemented `VerifierBackend` uses Cloud Build because it has a stable service
+contract and durable build/log receipt. Cloud Run Sandboxes remain a later option
+only after a repeated reliability gate and would plug into the same interface
+without changing action policy. They are not part of the current implementation or
+submission evidence.
+
+Cloud Build is a clean, separately identified execution environment, but not a
+no-egress sandbox: its trusted steps clone one pinned public repository commit and
+install dependencies from the locked Python environment. The candidate contributes
+no commands, images, URLs, or destinations. A deterministic template admits only
+two exact files and binds their preimage, candidate, diff, base, and source hashes;
+the hidden control and step program remain outside candidate authority.
 
 ## IAM and network policy
 
@@ -72,13 +78,15 @@ primary verifier.
 - The minimum agent receives only Firestore and Vertex project roles plus
   secret-level access to its exact Secret Manager entries. Storage permissions
   are deferred until the verifier artifact path exists.
-- The verifier receives no GitHub token, model credential, or production secret.
-- Generated code runs without outbound network access.
-- The GitHub App is installed only on selected repositories. The working issue
-  slice grants **Issues: read/write** plus implicit Metadata read. The future
-  verified-PR release will additionally require **Contents: read/write** and
-  **Pull requests: read/write**; those permissions must not be added until the
-  verifier and exact-tree publication gates ship. The App never needs Actions,
+- The verifier receives no GitHub token, model credential, runtime secret, Firestore
+  role, or production-data permission. Its dedicated service account has only
+  `roles/logging.logWriter`; the agent receives only create/get/update access to
+  Cloud Build and `actAs` on that identity.
+- Cloud Build has outbound dependency/source access as described above. A future
+  no-egress sandbox would be a separate, explicitly evidenced hardening step.
+- The GitHub App is installed only on selected repositories. The verified-PR path
+  requires **Contents: read/write**, **Pull requests: read/write**, **Issues:
+  read/write** for fallback, and implicit Metadata read. The App never needs Actions,
   Workflows, Administration, Secrets, merge, or deployment authority.
   Installation tokens are short-lived and down-scoped. See GitHub's primary documentation on
   [choosing permissions](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app)

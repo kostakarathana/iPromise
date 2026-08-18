@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .models import CompilationPayload, Testability
 from .source import CapturedSource
+
+
+# Keep model interpretation far below the durable run lease. Callers may shorten
+# this for testing, but cannot extend an invocation past this safety boundary.
+ADK_COMPILE_TIMEOUT_SECONDS = 120.0
+MAX_ADK_COMPILE_TIMEOUT_SECONDS = 120.0
 
 
 class ClaimCompilationError(RuntimeError):
@@ -18,11 +25,13 @@ class ClaimCompilationError(RuntimeError):
         model_invoked: bool = False,
         model: str | None = None,
         framework: str | None = None,
+        retryable: bool = False,
     ) -> None:
         super().__init__(message)
         self.model_invoked = model_invoked
         self.model = model
         self.framework = framework
+        self.retryable = retryable
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +79,19 @@ class DeterministicDemonstrationCompiler:
 class AdkVertexClaimCompiler:
     """Runs a typed Gemini agent inside a Google ADK 2 graph workflow."""
 
-    def __init__(self, model: str) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        timeout_seconds: float = ADK_COMPILE_TIMEOUT_SECONDS,
+    ) -> None:
+        if not 0 < timeout_seconds <= MAX_ADK_COMPILE_TIMEOUT_SECONDS:
+            raise ValueError(
+                "ADK claim compilation timeout must be greater than zero and no "
+                f"more than {MAX_ADK_COMPILE_TIMEOUT_SECONDS:g} seconds"
+            )
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
     def build_app(self) -> Any:
         try:
@@ -129,7 +149,9 @@ class AdkVertexClaimCompiler:
         raw_output: Any = None
         text_output: str | None = None
         saw_model_event = False
-        try:
+
+        async def collect_output() -> None:
+            nonlocal raw_output, text_output, saw_model_event
             async for event in runner.run_async(
                 user_id="ipromise-auditor",
                 session_id=session.id,
@@ -153,6 +175,21 @@ class AdkVertexClaimCompiler:
                     joined = "".join(part for part in parts if part)
                     if joined:
                         text_output = joined
+
+        try:
+            await asyncio.wait_for(
+                collect_output(),
+                timeout=self._timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise ClaimCompilationError(
+                "Google ADK claim compilation exceeded its "
+                f"{self._timeout_seconds:g}-second deadline",
+                model_invoked=saw_model_event,
+                model=self._model if saw_model_event else None,
+                framework="Google Agent Development Kit 2 Graph Workflow",
+                retryable=True,
+            ) from exc
         except Exception as exc:
             raise ClaimCompilationError(
                 "Google ADK claim compilation failed",

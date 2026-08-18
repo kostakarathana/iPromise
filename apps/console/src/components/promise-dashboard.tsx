@@ -13,6 +13,7 @@ import {
 import { EvidencePanel } from "@/components/evidence-panel";
 import { FindingSummary, PromiseSummary } from "@/components/promise-summary";
 import { RunTimeline } from "@/components/run-timeline";
+import { VerificationPanel } from "@/components/verification-panel";
 import {
   RepositoryConnection,
   type RepositoryConnectionState,
@@ -407,6 +408,12 @@ export function PromiseDashboard() {
         <div className="mt-7">
           <EvidencePanel run={run} />
         </div>
+
+        {run.verification ? (
+          <div className="mt-7">
+            <VerificationPanel run={run} />
+          </div>
+        ) : null}
 
         <div className="mt-6">
           <RunTimeline run={run} />

@@ -2,6 +2,8 @@
 
 **Customer promises should behave like tests.**
 
+![iPromise turns a customer promise into evidence and one bounded engineering action](docs/assets/ipromise-cover.png)
+
 iPromise is an autonomous promise-assurance agent for the [All Things Agentic Hackathon](https://allthingsagentichackathon.devpost.com/). It captures exact customer-facing claims, binds supported claims to approved controls, tests real product behaviour, and routes a source-grounded finding to the safest useful action: a verified draft pull request, a GitHub issue, or a configured email escalation.
 
 The hackathon MVP focuses on one complete Taskmaster workflow: verifying an account-deletion promise across synthetic application and analytics records. It does **not** claim legal compliance and does not pretend every promise is executable.
@@ -12,14 +14,17 @@ The minimum vertical slice is implemented and tested locally. It runs the synthe
 product, deterministic audit agent, and Promise Ledger together; proves the virtual
 T0+1h/T0+25h deletion mismatch; supports GitHub App installation and repository
 selection; persists cloud-mode runs and OAuth state in Firestore; accepts an
-authenticated scheduled trigger; and can open one reconciled, evidence-backed
-GitHub issue when external actions are explicitly enabled.
+authenticated scheduled trigger; and routes one contradiction through a locked
+red-before/green-after Cloud Build verifier contract to an exact-byte draft-PR
+publisher. Integration tests cover concurrent runs, remote reconciliation, and
+checkpoint recovery. Those tests use controlled GitHub and Cloud Build gateways;
+they are not live external-action evidence.
 
-No live cloud, Gemini, or GitHub receipt has been captured from this workstation.
-The eligible submission still requires a real Google Cloud deployment, live
-Gemini-through-ADK execution proof, and one real external-action receipt. Isolated
-repair verification and a real draft PR remain the winning-path release gate. See the
-[truthful implementation status](docs/implementation-status.md).
+No live Cloud Run, Gemini, Cloud Build, or GitHub workflow receipt has been captured
+from this workstation. The eligible submission still requires a real Google Cloud
+deployment, live Gemini-through-ADK execution proof, repeated Cloud Build receipts,
+and one real draft-PR receipt. Verification and GitHub actions both default off. See
+the [truthful implementation status](docs/implementation-status.md).
 
 ## Winning workflow
 
@@ -33,12 +38,13 @@ repair verification and a real draft PR remain the winning-path release gate. Se
 4. Deterministic code verifies the quote and binds it to an approved account-deletion control.
 5. The control exercises a synthetic SaaS deployment and inspects both application and analytics records.
 6. Evidence code returns a scoped verdict: `SUPPORTED`, `CONTRADICTED`, `INCONCLUSIVE`, or `NOT_TESTED`.
-7. For a contradiction, iPromise may propose bounded source edits, but deterministic
-   gates and isolated fail-before/pass-after verification control publication. The
-   first MVP truthfully records candidate verification as `NOT_RUN`.
+7. For the one locked deletion repair, deterministic code prepares exact source
+   bytes and submits a fixed Cloud Build program. Publication requires the expected
+   red baseline, green hidden control, green regression suite, exact source/base,
+   and exact candidate hashes. Any missing or mismatched receipt fails closed.
 8. iPromise performs exactly one configured action with the full audit trail. A
-   verified draft PR is primary; the working minimum opens a GitHub issue when the
-   repair is still unverified. Email remains off.
+   verified draft PR is primary; an evidence-backed issue is the fallback when the
+   exact repair cannot be generated or verified. Email remains off.
 
 ## Repository map
 
@@ -55,7 +61,7 @@ docs/             Architecture, ADRs, threat model, evaluation, demo, evidence m
 
 - Gemini 3.5 Flash through Vertex AI
 - Google Agent Development Kit (ADK)
-- Cloud Run, Cloud Scheduler, Firestore, Secret Manager, and Cloud Logging
+- Cloud Run, Cloud Scheduler, Firestore, Secret Manager, Cloud Build, and Cloud Logging
 - Next.js console and a synthetic FastAPI reference product
 - Least-privilege GitHub App for draft pull requests and issues
 
@@ -123,8 +129,9 @@ accepts a pasted personal access token or trusts an arbitrary `owner/repo` strin
 authorizes for the App; the current executable audit remains limited to the
 documented account-deletion control.
 
-Create a GitHub App with **Issues: read/write** and implicit Metadata read, make it
-installable by any account, and configure:
+For the full verified-PR workflow, create a GitHub App with **Contents: read/write**,
+**Pull requests: read/write**, **Issues: read/write**, and implicit Metadata read.
+Install it only on repositories the entrant is authorized to test, then configure:
 
 ```text
 Setup URL:    http://127.0.0.1:3000/api/integrations/github/setup
@@ -134,8 +141,14 @@ Callback URL: http://127.0.0.1:3000/api/integrations/github/callback
 Then set the `IPROMISE_GITHUB_*` values from
 [`services/agent/.env.example`](services/agent/.env.example). Keep
 `IPROMISE_GITHUB_ACTIONS_ENABLED=false` while testing connection and repository
-selection; enable it only for a repository where opening the bounded issue is
-intended. OAuth user tokens and one-hour installation tokens are never persisted.
+selection; enable it only after reviewing the repository and every granted
+permission. OAuth user tokens and one-hour installation tokens are never persisted.
+
+Repository connection is general, but the executable repair is deliberately not:
+the current verifier is locked to the public `kostakarathana/iPromise` repository,
+the exact vulnerable two-file snapshot, and a fixed test program. Other authorized
+repositories can be selected, but this repair cannot produce a draft PR for them;
+policy falls back safely rather than generalizing an unverified patch.
 
 For the Cloud Run, Firestore, Scheduler, Vertex AI, Secret Manager, and GitHub App
 deployment path, follow [`docs/deployment.md`](docs/deployment.md). The deployment

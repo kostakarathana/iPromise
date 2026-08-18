@@ -13,7 +13,11 @@ from jsonschema import Draft202012Validator
 from ipromise_agent.app import create_app
 from ipromise_agent.compiler import DeterministicDemonstrationCompiler
 from ipromise_agent.models import CreateRunRequest, RunStatus
-from ipromise_agent.service import ACTION_LEASE_SECONDS, AuditService
+from ipromise_agent.service import (
+    ACTION_LEASE_SECONDS,
+    RUN_LEASE_SECONDS,
+    AuditService,
+)
 
 from conftest import FakeReferenceClient, make_service
 
@@ -227,7 +231,9 @@ async def test_scheduler_returns_failure_until_same_delivery_recovers(
         recovered = await client.post("/v1/triggers/scheduled", headers=headers)
 
     assert first.status_code == 503
-    assert first.headers["retry-after"] == str(ACTION_LEASE_SECONDS)
+    assert RUN_LEASE_SECONDS == 1200
+    assert RUN_LEASE_SECONDS > ACTION_LEASE_SECONDS
+    assert first.headers["retry-after"] == str(RUN_LEASE_SECONDS)
     assert first.json()["status"] == "FAILED_RETRYABLE"
     assert recovered.status_code == 202
     assert recovered.json()["status"] == "COMPLETE"
@@ -260,7 +266,7 @@ async def test_scheduler_does_not_acknowledge_nonterminal_lease_contention(
         response = await client.post("/v1/triggers/scheduled", headers=headers)
 
     assert response.status_code == 503
-    assert response.headers["retry-after"] == str(ACTION_LEASE_SECONDS)
+    assert response.headers["retry-after"] == str(RUN_LEASE_SECONDS)
     assert response.json()["status"] == "ROUTING_ACTION"
 
 

@@ -43,6 +43,29 @@ class _InvalidOutputAfterModelEventCompiler:
         )
 
 
+class _TimeoutThenSuccessCompiler:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def compile(self, capture):
+        self.calls += 1
+        if self.calls == 1:
+            raise ClaimCompilationError(
+                "Google ADK claim compilation exceeded its 120-second deadline",
+                model_invoked=False,
+                model=None,
+                framework="Google Agent Development Kit 2 Graph Workflow",
+                retryable=True,
+            )
+        outcome = await DeterministicDemonstrationCompiler().compile(capture)
+        return replace(
+            outcome,
+            model_invoked=True,
+            model="gemini-3.5-flash",
+            framework="Google Agent Development Kit 2 Graph Workflow",
+        )
+
+
 class _ReconciledGitHub:
     def __init__(self, repository: GitHubRepository) -> None:
         self.repository = repository
@@ -304,6 +327,36 @@ async def test_failed_model_output_preserves_attempt_and_invocation_provenance(
     assert run.runtime.model_invoked is True
     assert run.runtime.model == "gemini-3.5-flash"
     assert all(action.state == ActionState.SKIPPED for action in run.actions)
+
+
+@pytest.mark.asyncio
+async def test_model_timeout_is_retryable_and_retry_reuses_the_same_run(
+    settings,
+) -> None:
+    cloud_settings = replace(settings, mode="cloud", compiler="adk")
+    compiler = _TimeoutThenSuccessCompiler()
+    service = AuditService(
+        settings=cloud_settings,
+        reference_client=FakeReferenceClient(),
+        compiler=compiler,
+    )
+    request = CreateRunRequest(idempotency_key="model-timeout-retry-01")
+
+    timed_out = await service.create_run(request)
+    recovered = await service.create_run(request)
+
+    assert timed_out.status == RunStatus.FAILED_RETRYABLE
+    assert timed_out.verdict == Verdict.INCONCLUSIVE
+    assert timed_out.runtime.model_invocation_attempted is True
+    assert timed_out.runtime.model_invoked is False
+    assert timed_out.runtime.model is None
+    assert "120-second deadline" in (timed_out.events[-1].detail or "")
+    assert all(action.state == ActionState.SKIPPED for action in timed_out.actions)
+    assert recovered.id == timed_out.id
+    assert recovered.status == RunStatus.COMPLETE
+    assert recovered.runtime.model_invocation_attempted is True
+    assert recovered.runtime.model_invoked is True
+    assert compiler.calls == 2
 
 
 @pytest.mark.asyncio

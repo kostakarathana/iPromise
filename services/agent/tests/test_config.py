@@ -63,6 +63,32 @@ def test_console_base_url_must_be_a_clean_https_origin_in_cloud() -> None:
             console_base_url="https://console.example.test/path?next=1"
         ).validate()
 
+
+def test_cloud_build_verifier_requires_complete_project_owned_identity() -> None:
+    with pytest.raises(ValueError, match="requires IPROMISE_CLOUD_BUILD_PROJECT"):
+        Settings(verifier_backend="cloud-build").validate()
+
+    project = "ipromise-test-2026"
+    Settings(
+        verifier_backend="cloud-build",
+        cloud_build_project=project,
+        cloud_build_location="australia-southeast1",
+        cloud_build_service_account=(
+            f"projects/{project}/serviceAccounts/"
+            f"ipromise-verifier@{project}.iam.gserviceaccount.com"
+        ),
+    ).validate()
+
+    with pytest.raises(ValueError, match="project-owned IAM service account"):
+        Settings(
+            verifier_backend="cloud-build",
+            cloud_build_project=project,
+            cloud_build_service_account=(
+                f"projects/{project}/serviceAccounts/"
+                "ipromise-verifier@different-project.iam.gserviceaccount.com"
+            ),
+        ).validate()
+
     with pytest.raises(ValueError, match="HTTPS console origin"):
         Settings(
             mode="cloud",

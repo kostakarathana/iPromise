@@ -32,7 +32,7 @@ from .models import (
     GitHubRepositorySelection,
     RunStatus,
 )
-from .service import ACTION_LEASE_SECONDS, AuditService
+from .service import ACTION_LEASE_SECONDS, RUN_LEASE_SECONDS, AuditService
 
 
 def create_app(
@@ -189,11 +189,15 @@ def create_app(
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 content=run.model_dump(mode="json", by_alias=True),
-                # A retry that arrives while the durable action lease is still
-                # held cannot make progress. Advertise a delay at least as long
-                # as the lease so retry policies can avoid exhausting their
-                # attempts before a crashed worker's claim expires.
-                headers={"Retry-After": str(ACTION_LEASE_SECONDS)},
+                # A retry that arrives while either durable lease is still held
+                # cannot make progress. Advertise the longer lease so retry
+                # policies do not exhaust attempts before a crashed worker's
+                # claim expires.
+                headers={
+                    "Retry-After": str(
+                        max(RUN_LEASE_SECONDS, ACTION_LEASE_SECONDS)
+                    )
+                },
             )
         return run
 

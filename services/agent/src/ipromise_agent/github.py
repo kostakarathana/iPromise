@@ -1,23 +1,28 @@
-"""Least-privilege GitHub App connection and idempotent issue publication."""
+"""Least-privilege GitHub App connection and idempotent publication."""
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import hashlib
 import html
 import json
+import re
 import secrets
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import quote, urlencode
 
 import httpx
 
 from .config import Settings
 from .models import (
+    ActionKind,
+    ActionState,
     AuditRun,
     GitHubInstallUrl,
     GitHubIntegrationStatus,
@@ -25,6 +30,7 @@ from .models import (
     GitHubOAuthStartRequest,
     GitHubRepository,
     PlannedAction,
+    VerificationResult,
 )
 
 
@@ -35,6 +41,14 @@ AMBIGUOUS_WRITE_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 ISSUE_INTENT_LEASE_SECONDS = 5 * 60
 ISSUE_INTENT_WAIT_SECONDS = 30.0
 ISSUE_INTENT_POLL_SECONDS = 0.05
+PULL_REQUEST_RECONCILIATION_DELAYS_SECONDS = (0.0, 0.1, 0.25)
+GIT_OBJECT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+ALLOWED_BLOB_MODES = {"100644", "100755"}
+MAX_CANDIDATE_BLOB_BYTES = 10 * 1024 * 1024
+MAX_SOURCE_BLOB_BYTES = 64 * 1024
+# Versioned with this hackathon's locked remediation template. It is deliberately
+# run-independent so identical scheduled findings create one Git object.
+DETERMINISTIC_COMMIT_TIMESTAMP = "2026-08-18T00:00:00Z"
 
 
 def finding_fingerprint(run: AuditRun, repository: GitHubRepository) -> str:
@@ -86,6 +100,77 @@ def finding_fingerprint(run: AuditRun, repository: GitHubRepository) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+class VerifiedCandidateInput(Protocol):
+    """Structural boundary shared with the separate verifier.
+
+    The publisher intentionally does not import the verifier implementation.
+    It snapshots these fields before its first await, verifies every SHA-256,
+    and uploads exactly the supplied byte strings.
+    """
+
+    @property
+    def base_sha(self) -> str: ...
+
+    @property
+    def repository_url(self) -> str: ...
+
+    @property
+    def unified_diff_sha256(self) -> str: ...
+
+    @property
+    def candidate_tree(self) -> Mapping[str, bytes]: ...
+
+    @property
+    def candidate_hashes(self) -> Mapping[str, str]: ...
+
+    @property
+    def preimage_hashes(self) -> Mapping[str, str]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateSnapshot:
+    base_sha: str
+    repository_url: str
+    unified_diff_sha256: str
+    files: tuple[tuple[str, bytes, str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedPullRequest:
+    """A receipt whose Git object identities can be independently checked."""
+
+    url: str
+    number: int
+    remote_id: int
+    branch: str
+    head_sha: str
+    base_sha: str
+    tree_sha: str
+    reconciled: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RepositorySourceSnapshot:
+    """Immutable base commit and exact allowlisted repository preimages."""
+
+    base_sha: str
+    files: tuple[tuple[str, bytes], ...]
+
+    @property
+    def preimages(self) -> dict[str, bytes]:
+        return dict(self.files)
+
+
+def pull_request_fingerprint(
+    repository: GitHubRepository,
+    candidate: VerifiedCandidateInput,
+) -> str:
+    """Return one cross-run identity for the exact repository repair intent."""
+
+    snapshot = _snapshot_candidate(candidate)
+    return _pull_request_fingerprint(repository, snapshot)
+
+
 class GitHubIntegrationError(RuntimeError):
     """A safe, user-facing integration failure."""
 
@@ -100,6 +185,10 @@ class GitHubAuthorizationError(GitHubIntegrationError):
 
 class GitHubPublishUncertain(GitHubIntegrationError):
     """The remote outcome could not be proven; callers must not blindly retry."""
+
+
+class GitHubPublicationRejected(GitHubIntegrationError):
+    """A fail-closed publication refusal with a proven safety reason."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -619,6 +708,74 @@ class GitHubService:
     async def selected_repository(self) -> GitHubRepository | None:
         return self._selected_from(await self.store.connection())
 
+    async def capture_repository_files(
+        self,
+        target: GitHubRepository,
+        paths: tuple[str, ...],
+    ) -> RepositorySourceSnapshot:
+        """Read exact blobs at one immutable default-branch commit.
+
+        This is a read-only preparation boundary. The caller supplies the
+        remediation allowlist; arbitrary paths, tree entries, and oversized
+        blobs are rejected before candidate construction.
+        """
+
+        self._require_configured()
+        if (
+            not paths
+            or len(paths) > 16
+            or len(paths) != len(set(paths))
+            or any(not _safe_candidate_path(path) for path in paths)
+        ):
+            raise GitHubPublicationRejected(
+                "Repository source capture requires unique safe allowlisted paths"
+            )
+        connection = await self.store.connection()
+        repository = self._bound_repository(connection, target)
+        await self._validate_installation_identity(connection, repository)
+        token = await self._installation_token(
+            connection,
+            repository,
+            permissions={"contents": "read"},
+        )
+        await self._validate_token_repository(repository, token)
+        base_sha = await self._get_ref_sha(
+            repository,
+            token,
+            f"heads/{repository.default_branch}",
+        )
+        if base_sha is None:
+            raise GitHubPublicationRejected(
+                "The selected repository default branch has no commit"
+            )
+        tree_sha = await self._commit_tree_sha(
+            repository,
+            token,
+            base_sha,
+            expected_parent=None,
+        )
+        leaves = await self._tree_leaves(repository, token, tree_sha)
+        files: list[tuple[str, bytes]] = []
+        for path in paths:
+            entry = leaves.get(path)
+            if entry is None:
+                raise GitHubPublicationRejected(
+                    f"Approved remediation source is absent: {path}"
+                )
+            mode, object_type, blob_sha = entry
+            if (
+                mode not in ALLOWED_BLOB_MODES
+                or object_type != "blob"
+                or GIT_OBJECT_SHA_PATTERN.fullmatch(blob_sha) is None
+            ):
+                raise GitHubPublicationRejected(
+                    f"Approved remediation source is not a regular blob: {path}"
+                )
+            files.append(
+                (path, await self._read_exact_source_blob(repository, token, blob_sha))
+            )
+        return RepositorySourceSnapshot(base_sha=base_sha, files=tuple(files))
+
     async def install_url(self) -> GitHubInstallUrl:
         self._require_configured()
         state = secrets.token_urlsafe(32)
@@ -792,7 +949,11 @@ class GitHubService:
         completed = False
         release_claim = True
         try:
-            token = await self._installation_token(connection, repository)
+            token = await self._installation_token(
+                connection,
+                repository,
+                permissions={"issues": "write"},
+            )
             receipt = await self._publish_or_reconcile_issue(
                 run=run,
                 action=action,
@@ -828,6 +989,318 @@ class GitHubService:
                     # A stale durable lease is safer than an uncoordinated retry;
                     # it expires and the next owner reconciles the remote marker.
                     pass
+
+    async def publish_draft_pull_request(
+        self,
+        run: AuditRun,
+        action: PlannedAction,
+        candidate: VerifiedCandidateInput,
+    ) -> PublishedPullRequest:
+        """Publish one verifier-proven candidate without re-encoding its bytes.
+
+        The run-bound repository, exact base commit, complete resulting Git
+        tree, deterministic branch, and draft PR are all checked before a
+        receipt is returned. Visible writes are reconciled by immutable
+        identities; this method never updates an existing ref, merges a PR, or
+        retries a write whose outcome cannot be proven.
+        """
+
+        snapshot = _snapshot_candidate(candidate)
+        self._require_pull_request_gate(run, action, snapshot)
+        target = run.repository
+        if target is None:  # guarded above; keeps type narrowing local
+            raise GitHubPublicationRejected(
+                "The run has no immutable repository target"
+            )
+        connection = await self.store.connection()
+        repository = self._bound_repository(connection, target)
+        expected_source = f"{repository.html_url.rstrip('/')}.git"
+        if snapshot.repository_url != expected_source:
+            raise GitHubPublicationRejected(
+                "The verified candidate source repository did not match the run"
+            )
+
+        fingerprint = _pull_request_fingerprint(repository, snapshot)
+        branch = _pull_request_branch(fingerprint)
+        marker = f"<!-- ipromise-draft-pr:v1:{fingerprint} -->"
+
+        await self._validate_installation_identity(connection, repository)
+        token = await self._installation_token(
+            connection,
+            repository,
+            permissions={"contents": "write", "pull_requests": "write"},
+        )
+        await self._validate_token_repository(repository, token)
+
+        # A prior successful call is safe to reconcile even if the default
+        # branch subsequently advanced. Its commit still has the exact base as
+        # its sole parent and its full tree is verified below.
+        existing = await self._find_pull_request(
+            repository=repository,
+            token=token,
+            branch=branch,
+            marker=marker,
+            snapshot=snapshot,
+        )
+        if existing is not None:
+            return existing
+
+        current_base = await self._get_ref_sha(
+            repository,
+            token,
+            f"heads/{repository.default_branch}",
+        )
+        if current_base != snapshot.base_sha:
+            raise GitHubPublicationRejected(
+                "The repository default branch moved away from the verified base SHA"
+            )
+
+        candidate_tree_sha = await self._create_candidate_tree(
+            repository,
+            token,
+            snapshot,
+        )
+        commit_sha = await self._create_candidate_commit(
+            repository=repository,
+            token=token,
+            snapshot=snapshot,
+            tree_sha=candidate_tree_sha,
+        )
+
+        # Close the time-of-check/time-of-use window before making a ref visible.
+        if (
+            await self._get_ref_sha(
+                repository,
+                token,
+                f"heads/{repository.default_branch}",
+            )
+            != snapshot.base_sha
+        ):
+            raise GitHubPublicationRejected(
+                "The repository default branch moved during candidate publication"
+            )
+
+        branch_reconciled = await self._create_or_reconcile_branch(
+            repository=repository,
+            token=token,
+            branch=branch,
+            commit_sha=commit_sha,
+        )
+
+        # A branch is harmless and recoverable; opening a stale PR is not. Fail
+        # closed if the base moved after ref creation and leave the exact branch
+        # for a later operator to inspect.
+        if (
+            await self._get_ref_sha(
+                repository,
+                token,
+                f"heads/{repository.default_branch}",
+            )
+            != snapshot.base_sha
+        ):
+            raise GitHubPublicationRejected(
+                "The repository default branch moved before draft PR creation"
+            )
+
+        reconciled_after_ref = await self._find_pull_request(
+            repository=repository,
+            token=token,
+            branch=branch,
+            marker=marker,
+            snapshot=snapshot,
+        )
+        if reconciled_after_ref is not None:
+            return reconciled_after_ref
+
+        return await self._create_or_reconcile_pull_request(
+            run=run,
+            action=action,
+            repository=repository,
+            token=token,
+            branch=branch,
+            marker=marker,
+            snapshot=snapshot,
+            tree_sha=candidate_tree_sha,
+            commit_sha=commit_sha,
+            prior_reconciliation=branch_reconciled,
+        )
+
+    def _require_pull_request_gate(
+        self,
+        run: AuditRun,
+        action: PlannedAction,
+        snapshot: _CandidateSnapshot,
+    ) -> None:
+        if not self.settings.github_actions_enabled:
+            raise GitHubNotConfigured("GitHub actions are disabled")
+        if run.repository is None:
+            raise GitHubPublicationRejected(
+                "The run has no immutable repository target"
+            )
+        if action.kind != ActionKind.PULL_REQUEST:
+            raise GitHubPublicationRejected(
+                "Only a pull-request action can invoke draft PR publication"
+            )
+        if action.state != ActionState.READY or not action.verified:
+            raise GitHubPublicationRejected(
+                "The draft PR action is not verified and ready"
+            )
+        receipt = run.verification
+        if not (
+            receipt is not None
+            and receipt.publishable
+            and receipt.isolated
+            and receipt.exact_tree_verified
+            and receipt.baseline_control == VerificationResult.FAIL
+            and receipt.candidate_control == VerificationResult.PASS
+            and receipt.regression_suite == VerificationResult.PASS
+        ):
+            raise GitHubPublicationRejected(
+                "The run does not contain a complete isolated verification receipt"
+            )
+        binding = receipt.artifact_binding
+        if binding is None:
+            raise GitHubPublicationRejected(
+                "The verification receipt is not bound to an exact build and candidate"
+            )
+        candidate_hashes = {
+            path: candidate_sha
+            for path, _content, candidate_sha, _preimage_sha in snapshot.files
+        }
+        preimage_hashes = {
+            path: preimage_sha
+            for path, _content, _candidate_sha, preimage_sha in snapshot.files
+        }
+        if (
+            binding.repository_url != snapshot.repository_url
+            or binding.base_sha != snapshot.base_sha
+            or binding.unified_diff_sha256 != snapshot.unified_diff_sha256
+            or binding.candidate_hashes != candidate_hashes
+            or binding.preimage_hashes != preimage_hashes
+        ):
+            raise GitHubPublicationRejected(
+                "The candidate did not match the verification receipt's artifact binding"
+            )
+
+    def _bound_repository(
+        self,
+        connection: _Connection | None,
+        target: GitHubRepository,
+    ) -> GitHubRepository:
+        if connection is None:
+            raise GitHubAuthorizationError(
+                "The run's repository is no longer connected"
+            )
+        repository = next(
+            (item for item in connection.repositories if item.id == target.id),
+            None,
+        )
+        if repository is None:
+            raise GitHubAuthorizationError(
+                "The run's repository is not available to the verified installation"
+            )
+        immutable_identity = (
+            repository.full_name,
+            repository.default_branch,
+            repository.private,
+            repository.html_url,
+        )
+        target_identity = (
+            target.full_name,
+            target.default_branch,
+            target.private,
+            target.html_url,
+        )
+        if immutable_identity != target_identity:
+            raise GitHubAuthorizationError(
+                "The run's bound repository identity no longer matches the connection"
+            )
+        if repository.archived or target.archived:
+            raise GitHubAuthorizationError("The run's repository is archived")
+        return repository
+
+    async def _validate_installation_identity(
+        self,
+        connection: _Connection,
+        repository: GitHubRepository,
+    ) -> None:
+        url = (
+            f"{self.settings.github_api_url}/app/installations/"
+            f"{connection.installation_id}"
+        )
+        try:
+            async with self._client() as client:
+                response = await client.get(
+                    url,
+                    headers=self._api_headers(self._app_jwt()),
+                )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubPublishUncertain(
+                "GitHub installation identity could not be proven"
+            ) from exc
+        self._require_status(
+            response, {200}, "GitHub installation identity check failed"
+        )
+        body = self._json_object(
+            response, "GitHub returned an invalid installation identity"
+        )
+        account = body.get("account")
+        account_login = account.get("login") if isinstance(account, dict) else None
+        repository_owner = repository.full_name.partition("/")[0]
+        if (
+            str(body.get("id")) != str(connection.installation_id)
+            or str(body.get("app_id")) != str(self.settings.github_app_id)
+            or body.get("suspended_at") is not None
+            or not isinstance(account_login, str)
+            or account_login.casefold() != connection.account_login.casefold()
+            or account_login.casefold() != repository_owner.casefold()
+        ):
+            raise GitHubAuthorizationError(
+                "The selected GitHub App installation identity did not match the run"
+            )
+
+    async def _validate_token_repository(
+        self,
+        repository: GitHubRepository,
+        token: str,
+    ) -> None:
+        try:
+            async with self._client() as client:
+                repositories = await self._paginate(
+                    client,
+                    f"{self.settings.github_api_url}/installation/repositories",
+                    headers=self._api_headers(token),
+                    collection_key="repositories",
+                )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubPublishUncertain(
+                "The repository-scoped installation token could not be verified"
+            ) from exc
+        if len(repositories) != 1:
+            raise GitHubAuthorizationError(
+                "The publication token was not scoped to exactly one repository"
+            )
+        item = repositories[0]
+        identity = (
+            str(item.get("id")),
+            str(item.get("full_name") or ""),
+            str(item.get("default_branch") or ""),
+            bool(item.get("private", False)),
+            str(item.get("html_url") or ""),
+            bool(item.get("archived", False)),
+        )
+        expected = (
+            str(repository.id),
+            repository.full_name,
+            repository.default_branch,
+            repository.private,
+            repository.html_url,
+            False,
+        )
+        if identity != expected:
+            raise GitHubAuthorizationError(
+                "The repository-scoped token identity did not match the run"
+            )
 
     async def _wait_for_issue_intent(
         self, fingerprint: str, owner: str
@@ -916,25 +1389,800 @@ class GitHubService:
         self._require_status(response, {201}, "GitHub issue creation failed")
         raise AssertionError("unreachable GitHub issue status")
 
-    async def _installation_token(
-        self, connection: _Connection, repository: GitHubRepository
-    ) -> str:
-        try:
-            import jwt
-        except ImportError as exc:  # pragma: no cover - packaging guard
-            raise GitHubNotConfigured(
-                "Install the agent's github dependency extra before enabling actions"
-            ) from exc
-        now = int(time.time())
-        app_jwt = jwt.encode(
-            {
-                "iat": now - 60,
-                "exp": now + 9 * 60,
-                "iss": self.settings.github_app_client_id,
-            },
-            self.settings.github_app_private_key,
-            algorithm="RS256",
+    async def _get_ref_sha(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        ref: str,
+    ) -> str | None:
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/ref/{quote(ref, safe='/')}"
         )
+        try:
+            async with self._client() as client:
+                response = await client.get(url, headers=self._api_headers(token))
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubPublishUncertain(
+                "GitHub ref state could not be proven"
+            ) from exc
+        if response.status_code == 404:
+            return None
+        self._require_status(response, {200}, "GitHub ref lookup failed")
+        body = self._json_object(response, "GitHub returned an invalid ref")
+        object_body = body.get("object")
+        sha = object_body.get("sha") if isinstance(object_body, dict) else None
+        if (
+            body.get("ref") != f"refs/{ref}"
+            or not isinstance(sha, str)
+            or not GIT_OBJECT_SHA_PATTERN.fullmatch(sha)
+        ):
+            raise GitHubIntegrationError("GitHub returned an invalid ref")
+        return sha
+
+    async def _read_exact_source_blob(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        blob_sha: str,
+    ) -> bytes:
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/blobs/{blob_sha}"
+        )
+        try:
+            async with self._client() as client:
+                response = await client.get(url, headers=self._api_headers(token))
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubIntegrationError(
+                "GitHub source blob could not be read"
+            ) from exc
+        self._require_status(response, {200}, "GitHub source blob lookup failed")
+        body = self._json_object(response, "GitHub returned an invalid source blob")
+        encoded = body.get("content")
+        if (
+            body.get("sha") != blob_sha
+            or body.get("encoding") != "base64"
+            or not isinstance(encoded, str)
+        ):
+            raise GitHubIntegrationError("GitHub returned an invalid source blob")
+        try:
+            content = base64.b64decode("".join(encoded.split()), validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise GitHubIntegrationError(
+                "GitHub returned invalid source blob encoding"
+            ) from exc
+        if len(content) > MAX_SOURCE_BLOB_BYTES:
+            raise GitHubPublicationRejected(
+                "Approved remediation source exceeds the read bound"
+            )
+        if _git_blob_sha(content) != blob_sha:
+            raise GitHubPublicationRejected(
+                "GitHub source blob bytes did not match their object identity"
+            )
+        return content
+
+    async def _create_candidate_tree(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        snapshot: _CandidateSnapshot,
+    ) -> str:
+        base_tree_sha = await self._commit_tree_sha(
+            repository,
+            token,
+            snapshot.base_sha,
+            expected_parent=None,
+        )
+        base_entries = await self._tree_leaves(
+            repository,
+            token,
+            base_tree_sha,
+        )
+        tree_entries: list[dict[str, str]] = []
+        for path, content, _sha256, _preimage_sha256 in snapshot.files:
+            existing = base_entries.get(path)
+            if existing is None:
+                raise GitHubPublicationRejected(
+                    f"Candidate path is absent from the verified base tree: {path}"
+                )
+            mode, object_type, _base_blob_sha = existing
+            if object_type != "blob" or mode not in ALLOWED_BLOB_MODES:
+                raise GitHubPublicationRejected(
+                    f"Candidate path is not a bounded regular file: {path}"
+                )
+            blob_sha = await self._create_exact_blob(repository, token, content)
+            tree_entries.append(
+                {
+                    "path": path,
+                    "mode": mode,
+                    "type": "blob",
+                    "sha": blob_sha,
+                }
+            )
+
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/trees"
+        )
+        try:
+            async with self._client() as client:
+                response = await client.post(
+                    url,
+                    headers=self._api_headers(token),
+                    json={"base_tree": base_tree_sha, "tree": tree_entries},
+                )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubPublishUncertain(
+                "GitHub candidate tree creation had an ambiguous outcome"
+            ) from exc
+        if response.status_code in AMBIGUOUS_WRITE_STATUSES:
+            raise GitHubPublishUncertain(
+                "GitHub candidate tree creation had an ambiguous outcome"
+            )
+        self._require_status(response, {201}, "GitHub candidate tree creation failed")
+        body = self._json_object(
+            response, "GitHub returned an invalid candidate tree"
+        )
+        tree_sha = body.get("sha")
+        if not isinstance(tree_sha, str) or not GIT_OBJECT_SHA_PATTERN.fullmatch(
+            tree_sha
+        ):
+            raise GitHubIntegrationError("GitHub returned an invalid candidate tree")
+        await self._verify_candidate_tree(
+            repository,
+            token,
+            base_tree_sha=base_tree_sha,
+            candidate_tree_sha=tree_sha,
+            snapshot=snapshot,
+        )
+        return tree_sha
+
+    async def _create_exact_blob(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        content: bytes,
+    ) -> str:
+        expected_sha = _git_blob_sha(content)
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/blobs"
+        )
+        try:
+            async with self._client() as client:
+                response = await client.post(
+                    url,
+                    headers=self._api_headers(token),
+                    json={
+                        "content": base64.b64encode(content).decode("ascii"),
+                        "encoding": "base64",
+                    },
+                )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            return await self._reconcile_exact_blob(
+                repository, token, content, expected_sha, cause=exc
+            )
+        if response.status_code == 201:
+            body = self._json_object(response, "GitHub returned an invalid blob")
+            if body.get("sha") != expected_sha:
+                raise GitHubPublicationRejected(
+                    "GitHub blob identity did not match the exact candidate bytes"
+                )
+            return expected_sha
+        if response.status_code in AMBIGUOUS_WRITE_STATUSES:
+            return await self._reconcile_exact_blob(
+                repository,
+                token,
+                content,
+                expected_sha,
+                cause=GitHubIntegrationError(
+                    f"GitHub returned an ambiguous blob status ({response.status_code})"
+                ),
+            )
+        self._require_status(response, {201}, "GitHub blob creation failed")
+        raise AssertionError("unreachable GitHub blob status")
+
+    async def _reconcile_exact_blob(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        content: bytes,
+        expected_sha: str,
+        *,
+        cause: Exception,
+    ) -> str:
+        last_error: Exception = cause
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/blobs/{expected_sha}"
+        )
+        for delay in PULL_REQUEST_RECONCILIATION_DELAYS_SECONDS:
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                async with self._client() as client:
+                    response = await client.get(
+                        url, headers=self._api_headers(token)
+                    )
+                if response.status_code == 404:
+                    continue
+                self._require_status(response, {200}, "GitHub blob lookup failed")
+                body = self._json_object(
+                    response, "GitHub returned an invalid blob"
+                )
+                encoded = body.get("content")
+                if body.get("sha") != expected_sha or not isinstance(encoded, str):
+                    raise GitHubPublicationRejected(
+                        "GitHub blob identity did not match the candidate"
+                    )
+                remote = base64.b64decode("".join(encoded.split()), validate=True)
+                if remote != content:
+                    raise GitHubPublicationRejected(
+                        "GitHub blob bytes did not match the verified candidate"
+                    )
+                return expected_sha
+            except GitHubPublicationRejected:
+                raise
+            except (
+                GitHubIntegrationError,
+                ValueError,
+                httpx.TimeoutException,
+                httpx.NetworkError,
+            ) as exc:
+                last_error = exc
+        raise GitHubPublishUncertain(
+            "GitHub did not confirm the exact blob outcome; no blind retry was attempted"
+        ) from last_error
+
+    async def _create_candidate_commit(
+        self,
+        *,
+        repository: GitHubRepository,
+        token: str,
+        snapshot: _CandidateSnapshot,
+        tree_sha: str,
+    ) -> str:
+        message = (
+            "Repair promise drift detected by iPromise\n\n"
+            f"Base: {snapshot.base_sha}\n"
+            f"Verified diff: {snapshot.unified_diff_sha256}"
+        )
+        identity = {
+            "name": "iPromise",
+            "email": "bot@ipromise.dev",
+            # Git commit identity must be stable across duplicate scheduled
+            # runs so concurrent publishers create the same content-addressed
+            # object and can safely reconcile one deterministic branch.
+            "date": DETERMINISTIC_COMMIT_TIMESTAMP,
+        }
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/commits"
+        )
+        try:
+            async with self._client() as client:
+                response = await client.post(
+                    url,
+                    headers=self._api_headers(token),
+                    json={
+                        "message": message,
+                        "tree": tree_sha,
+                        "parents": [snapshot.base_sha],
+                        "author": identity,
+                        "committer": identity,
+                    },
+                )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubPublishUncertain(
+                "GitHub candidate commit creation had an ambiguous outcome"
+            ) from exc
+        if response.status_code in AMBIGUOUS_WRITE_STATUSES:
+            raise GitHubPublishUncertain(
+                "GitHub candidate commit creation had an ambiguous outcome"
+            )
+        self._require_status(response, {201}, "GitHub candidate commit creation failed")
+        body = self._json_object(
+            response, "GitHub returned an invalid candidate commit"
+        )
+        commit_sha = body.get("sha")
+        if not isinstance(commit_sha, str) or not GIT_OBJECT_SHA_PATTERN.fullmatch(
+            commit_sha
+        ):
+            raise GitHubIntegrationError("GitHub returned an invalid candidate commit")
+        verified_tree = await self._commit_tree_sha(
+            repository,
+            token,
+            commit_sha,
+            expected_parent=snapshot.base_sha,
+        )
+        if verified_tree != tree_sha:
+            raise GitHubPublicationRejected(
+                "GitHub candidate commit did not contain the exact candidate tree"
+            )
+        return commit_sha
+
+    async def _commit_tree_sha(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        commit_sha: str,
+        *,
+        expected_parent: str | None,
+    ) -> str:
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/commits/{commit_sha}"
+        )
+        try:
+            async with self._client() as client:
+                response = await client.get(url, headers=self._api_headers(token))
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubPublishUncertain(
+                "GitHub commit identity could not be proven"
+            ) from exc
+        self._require_status(response, {200}, "GitHub commit lookup failed")
+        body = self._json_object(response, "GitHub returned an invalid commit")
+        tree = body.get("tree")
+        tree_sha = tree.get("sha") if isinstance(tree, dict) else None
+        parents = body.get("parents")
+        if (
+            body.get("sha") != commit_sha
+            or not isinstance(tree_sha, str)
+            or not GIT_OBJECT_SHA_PATTERN.fullmatch(tree_sha)
+            or not isinstance(parents, list)
+        ):
+            raise GitHubIntegrationError("GitHub returned an invalid commit")
+        if expected_parent is not None:
+            parent_shas = [
+                item.get("sha") for item in parents if isinstance(item, dict)
+            ]
+            if parent_shas != [expected_parent]:
+                raise GitHubPublicationRejected(
+                    "GitHub candidate commit was not based only on the verified base"
+                )
+        return tree_sha
+
+    async def _tree_leaves(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        tree_sha: str,
+    ) -> dict[str, tuple[str, str, str]]:
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/trees/{tree_sha}"
+        )
+        try:
+            async with self._client() as client:
+                response = await client.get(
+                    url,
+                    headers=self._api_headers(token),
+                    params={"recursive": "1"},
+                )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise GitHubPublishUncertain(
+                "GitHub tree identity could not be proven"
+            ) from exc
+        self._require_status(response, {200}, "GitHub tree lookup failed")
+        body = self._json_object(response, "GitHub returned an invalid tree")
+        items = body.get("tree")
+        if (
+            body.get("sha") != tree_sha
+            or body.get("truncated") is True
+            or not isinstance(items, list)
+        ):
+            raise GitHubPublicationRejected(
+                "GitHub could not return the complete exact tree"
+            )
+        result: dict[str, tuple[str, str, str]] = {}
+        for item in items:
+            if not isinstance(item, dict) or item.get("type") == "tree":
+                continue
+            path = item.get("path")
+            mode = item.get("mode")
+            object_type = item.get("type")
+            sha = item.get("sha")
+            if not all(isinstance(value, str) for value in (path, mode, object_type, sha)):
+                raise GitHubIntegrationError("GitHub returned an invalid tree entry")
+            if path in result:
+                raise GitHubIntegrationError("GitHub returned a duplicate tree path")
+            result[path] = (mode, object_type, sha)
+        return result
+
+    async def _verify_candidate_tree(
+        self,
+        repository: GitHubRepository,
+        token: str,
+        *,
+        base_tree_sha: str,
+        candidate_tree_sha: str,
+        snapshot: _CandidateSnapshot,
+    ) -> None:
+        base = await self._tree_leaves(repository, token, base_tree_sha)
+        expected = dict(base)
+        for path, content, _sha256, _preimage_sha256 in snapshot.files:
+            current = base.get(path)
+            if current is None or current[1] != "blob":
+                raise GitHubPublicationRejected(
+                    f"Candidate path is not a base-tree blob: {path}"
+                )
+            expected[path] = (current[0], "blob", _git_blob_sha(content))
+        observed = await self._tree_leaves(repository, token, candidate_tree_sha)
+        if observed != expected:
+            raise GitHubPublicationRejected(
+                "The resulting Git tree did not match the exact verified candidate"
+            )
+
+    async def _create_or_reconcile_branch(
+        self,
+        *,
+        repository: GitHubRepository,
+        token: str,
+        branch: str,
+        commit_sha: str,
+    ) -> bool:
+        ref_name = f"heads/{branch}"
+        existing = await self._get_ref_sha(repository, token, ref_name)
+        if existing is not None:
+            if existing != commit_sha:
+                raise GitHubPublicationRejected(
+                    "The deterministic iPromise branch already points elsewhere"
+                )
+            return True
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/git/refs"
+        )
+        cause: Exception | None = None
+        try:
+            async with self._client() as client:
+                response = await client.post(
+                    url,
+                    headers=self._api_headers(token),
+                    json={"ref": f"refs/heads/{branch}", "sha": commit_sha},
+                )
+            if response.status_code == 201:
+                body = self._json_object(
+                    response, "GitHub returned an invalid branch receipt"
+                )
+                object_body = body.get("object")
+                if (
+                    body.get("ref") != f"refs/heads/{branch}"
+                    or not isinstance(object_body, dict)
+                    or object_body.get("sha") != commit_sha
+                ):
+                    raise GitHubPublicationRejected(
+                        "GitHub branch did not point to the exact candidate commit"
+                    )
+                return False
+            if response.status_code not in AMBIGUOUS_WRITE_STATUSES | {422}:
+                self._require_status(response, {201}, "GitHub branch creation failed")
+            cause = GitHubIntegrationError(
+                f"GitHub returned an ambiguous branch status ({response.status_code})"
+            )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            cause = exc
+
+        for delay in PULL_REQUEST_RECONCILIATION_DELAYS_SECONDS:
+            if delay:
+                await asyncio.sleep(delay)
+            found = await self._get_ref_sha(repository, token, ref_name)
+            if found is None:
+                continue
+            if found != commit_sha:
+                raise GitHubPublicationRejected(
+                    "The deterministic iPromise branch points to a different commit"
+                )
+            return True
+        raise GitHubPublishUncertain(
+            "GitHub did not confirm the branch outcome; the ref was not force-updated"
+        ) from cause
+
+    async def _find_pull_request(
+        self,
+        *,
+        repository: GitHubRepository,
+        token: str,
+        branch: str,
+        marker: str,
+        snapshot: _CandidateSnapshot,
+    ) -> PublishedPullRequest | None:
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/pulls"
+        )
+        owner = repository.full_name.partition("/")[0]
+        matches: list[dict[str, Any]] = []
+        for page in range(1, 11):
+            try:
+                async with self._client() as client:
+                    response = await client.get(
+                        url,
+                        headers=self._api_headers(token),
+                        params={
+                            "state": "all",
+                            "head": f"{owner}:{branch}",
+                            "base": repository.default_branch,
+                            "per_page": "100",
+                            "page": str(page),
+                        },
+                    )
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                raise GitHubPublishUncertain(
+                    "GitHub draft PR reconciliation could not prove remote state"
+                ) from exc
+            self._require_status(
+                response, {200}, "GitHub draft PR reconciliation failed"
+            )
+            try:
+                items = response.json()
+            except ValueError as exc:
+                raise GitHubIntegrationError(
+                    "GitHub returned an invalid draft PR list"
+                ) from exc
+            if not isinstance(items, list):
+                raise GitHubIntegrationError(
+                    "GitHub returned an invalid draft PR list"
+                )
+            matches.extend(item for item in items if isinstance(item, dict))
+            if len(items) < 100:
+                break
+        else:
+            raise GitHubPublishUncertain(
+                "GitHub draft PR reconciliation exceeded its pagination limit"
+            )
+
+        if not matches:
+            return None
+        marked = [item for item in matches if marker in str(item.get("body") or "")]
+        if len(marked) != 1 or len(matches) != 1:
+            raise GitHubPublicationRejected(
+                "The deterministic branch has an ambiguous or unmarked PR history"
+            )
+        return await self._published_pull_request(
+            marked[0],
+            repository=repository,
+            token=token,
+            branch=branch,
+            marker=marker,
+            snapshot=snapshot,
+            reconciled=True,
+        )
+
+    async def _create_or_reconcile_pull_request(
+        self,
+        *,
+        run: AuditRun,
+        action: PlannedAction,
+        repository: GitHubRepository,
+        token: str,
+        branch: str,
+        marker: str,
+        snapshot: _CandidateSnapshot,
+        tree_sha: str,
+        commit_sha: str,
+        prior_reconciliation: bool,
+    ) -> PublishedPullRequest:
+        url = (
+            f"{self.settings.github_api_url}/repos/"
+            f"{quote(repository.full_name, safe='/')}/pulls"
+        )
+        payload = {
+            "title": f"[iPromise] {action.title}"[:256],
+            "head": branch,
+            "base": repository.default_branch,
+            "body": self._pull_request_body(
+                run,
+                marker=marker,
+                snapshot=snapshot,
+                tree_sha=tree_sha,
+                commit_sha=commit_sha,
+            ),
+            "draft": True,
+            "maintainer_can_modify": False,
+        }
+        cause: Exception | None = None
+        try:
+            async with self._client() as client:
+                response = await client.post(
+                    url,
+                    headers=self._api_headers(token),
+                    json=payload,
+                )
+            if response.status_code == 201:
+                try:
+                    body = self._json_object(
+                        response, "GitHub returned an invalid draft PR receipt"
+                    )
+                    receipt = await self._published_pull_request(
+                        body,
+                        repository=repository,
+                        token=token,
+                        branch=branch,
+                        marker=marker,
+                        snapshot=snapshot,
+                        reconciled=prior_reconciliation,
+                    )
+                    if receipt.head_sha != commit_sha or receipt.tree_sha != tree_sha:
+                        raise GitHubPublicationRejected(
+                            "GitHub draft PR did not contain the exact candidate commit"
+                        )
+                    return receipt
+                except GitHubPublicationRejected:
+                    raise
+                except GitHubIntegrationError as exc:
+                    cause = exc
+            elif response.status_code in AMBIGUOUS_WRITE_STATUSES | {422}:
+                cause = GitHubIntegrationError(
+                    f"GitHub returned an ambiguous draft PR status ({response.status_code})"
+                )
+            else:
+                self._require_status(
+                    response, {201}, "GitHub draft PR creation failed"
+                )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            cause = exc
+
+        last_error = cause or GitHubIntegrationError(
+            "GitHub returned an invalid draft PR receipt"
+        )
+        for delay in PULL_REQUEST_RECONCILIATION_DELAYS_SECONDS:
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                receipt = await self._find_pull_request(
+                    repository=repository,
+                    token=token,
+                    branch=branch,
+                    marker=marker,
+                    snapshot=snapshot,
+                )
+            except GitHubPublicationRejected:
+                raise
+            except GitHubIntegrationError as exc:
+                last_error = exc
+                continue
+            if receipt is not None:
+                if receipt.head_sha != commit_sha or receipt.tree_sha != tree_sha:
+                    raise GitHubPublicationRejected(
+                        "The reconciled draft PR did not contain the candidate commit"
+                    )
+                return receipt
+        raise GitHubPublishUncertain(
+            "GitHub did not confirm the draft PR outcome; no duplicate was opened"
+        ) from last_error
+
+    async def _published_pull_request(
+        self,
+        payload: dict[str, Any],
+        *,
+        repository: GitHubRepository,
+        token: str,
+        branch: str,
+        marker: str,
+        snapshot: _CandidateSnapshot,
+        reconciled: bool,
+    ) -> PublishedPullRequest:
+        head = payload.get("head")
+        base = payload.get("base")
+        head_repo = head.get("repo") if isinstance(head, dict) else None
+        base_repo = base.get("repo") if isinstance(base, dict) else None
+        head_sha = head.get("sha") if isinstance(head, dict) else None
+        valid = (
+            payload.get("state") == "open"
+            and payload.get("draft") is True
+            and payload.get("merged_at") is None
+            and marker in str(payload.get("body") or "")
+            and isinstance(head, dict)
+            and head.get("ref") == branch
+            and isinstance(head_repo, dict)
+            and str(head_repo.get("id")) == str(repository.id)
+            and isinstance(base, dict)
+            and base.get("ref") == repository.default_branch
+            and isinstance(base_repo, dict)
+            and str(base_repo.get("id")) == str(repository.id)
+            and isinstance(head_sha, str)
+            and GIT_OBJECT_SHA_PATTERN.fullmatch(head_sha) is not None
+        )
+        if not valid:
+            raise GitHubPublicationRejected(
+                "GitHub returned a PR that was not the expected open draft"
+            )
+        branch_sha = await self._get_ref_sha(repository, token, f"heads/{branch}")
+        if branch_sha != head_sha:
+            raise GitHubPublicationRejected(
+                "The draft PR head did not match the deterministic branch"
+            )
+        tree_sha = await self._commit_tree_sha(
+            repository,
+            token,
+            head_sha,
+            expected_parent=snapshot.base_sha,
+        )
+        base_tree_sha = await self._commit_tree_sha(
+            repository,
+            token,
+            snapshot.base_sha,
+            expected_parent=None,
+        )
+        await self._verify_candidate_tree(
+            repository,
+            token,
+            base_tree_sha=base_tree_sha,
+            candidate_tree_sha=tree_sha,
+            snapshot=snapshot,
+        )
+        try:
+            return PublishedPullRequest(
+                url=str(payload["html_url"]),
+                number=int(payload["number"]),
+                remote_id=int(payload["id"]),
+                branch=branch,
+                head_sha=head_sha,
+                base_sha=snapshot.base_sha,
+                tree_sha=tree_sha,
+                reconciled=reconciled,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GitHubIntegrationError(
+                "GitHub returned an invalid draft PR receipt"
+            ) from exc
+
+    def _pull_request_body(
+        self,
+        run: AuditRun,
+        *,
+        marker: str,
+        snapshot: _CandidateSnapshot,
+        tree_sha: str,
+        commit_sha: str,
+    ) -> str:
+        files = "\n".join(
+            f"- `{_safe(path, 500)}` — SHA-256 `{sha256}`"
+            for path, _content, sha256, _preimage_sha256 in snapshot.files
+        )
+        return f"""{marker}
+<!-- ipromise-base:v1:{snapshot.base_sha} -->
+<!-- ipromise-tree:v1:{tree_sha} -->
+
+## Verified repair
+
+iPromise detected a scoped contradiction in the account-deletion promise and prepared this bounded repair from an isolated fail-before/pass-after run.
+
+- Run: `{_safe(run.id, 128)}`
+- Exact base commit: `{snapshot.base_sha}`
+- Exact candidate tree: `{tree_sha}`
+- Exact candidate commit: `{commit_sha}`
+- Verified unified diff SHA-256: `{snapshot.unified_diff_sha256}`
+
+## Exact candidate files
+
+{files}
+
+## Safety boundary
+
+This is a draft only. iPromise did not merge or deploy it. The evidence used synthetic data, is scoped to the systems and time shown, and is not a legal-compliance conclusion.
+"""[:65_000]
+
+    @staticmethod
+    def _json_object(response: httpx.Response, message: str) -> dict[str, Any]:
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise GitHubIntegrationError(message) from exc
+        if not isinstance(body, dict):
+            raise GitHubIntegrationError(message)
+        return body
+
+    async def _installation_token(
+        self,
+        connection: _Connection,
+        repository: GitHubRepository,
+        *,
+        permissions: dict[str, str],
+    ) -> str:
+        app_jwt = self._app_jwt()
         async with self._client() as client:
             response = await client.post(
                 (
@@ -944,14 +2192,42 @@ class GitHubService:
                 headers=self._api_headers(app_jwt),
                 json={
                     "repository_ids": [repository.id],
-                    "permissions": {"issues": "write"},
+                    "permissions": permissions,
                 },
             )
         self._require_status(response, {201}, "GitHub token minting failed")
-        token = response.json().get("token")
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise GitHubAuthorizationError(
+                "GitHub returned an invalid installation token response"
+            ) from exc
+        if not isinstance(body, dict):
+            raise GitHubAuthorizationError(
+                "GitHub returned an invalid installation token response"
+            )
+        token = body.get("token")
         if not isinstance(token, str) or not token:
             raise GitHubAuthorizationError("GitHub did not return an installation token")
         return token
+
+    def _app_jwt(self) -> str:
+        try:
+            import jwt
+        except ImportError as exc:  # pragma: no cover - packaging guard
+            raise GitHubNotConfigured(
+                "Install the agent's github dependency extra before enabling actions"
+            ) from exc
+        now = int(time.time())
+        return jwt.encode(
+            {
+                "iat": now - 60,
+                "exp": now + 9 * 60,
+                "iss": self.settings.github_app_client_id,
+            },
+            self.settings.github_app_private_key,
+            algorithm="RS256",
+        )
 
     async def _find_issue(
         self, repository: GitHubRepository, token: str, marker: str
@@ -1157,6 +2433,164 @@ This run used synthetic data. The result applies only to the systems and time sh
 
 def _base64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
+
+
+def _snapshot_candidate(candidate: VerifiedCandidateInput) -> _CandidateSnapshot:
+    """Copy and authenticate the verifier boundary before any network await."""
+
+    try:
+        base_sha = candidate.base_sha
+        repository_url = candidate.repository_url
+        diff_sha = candidate.unified_diff_sha256
+        tree = candidate.candidate_tree
+        hashes = candidate.candidate_hashes
+        preimage_hashes = candidate.preimage_hashes
+    except (AttributeError, TypeError) as exc:
+        raise GitHubPublicationRejected(
+            "The verified candidate input is incomplete"
+        ) from exc
+    if (
+        not isinstance(base_sha, str)
+        or not GIT_OBJECT_SHA_PATTERN.fullmatch(base_sha)
+    ):
+        raise GitHubPublicationRejected(
+            "The verified candidate base must be a full lowercase Git SHA"
+        )
+    if (
+        not isinstance(repository_url, str)
+        or not repository_url.startswith("https://")
+        or not repository_url.endswith(".git")
+    ):
+        raise GitHubPublicationRejected(
+            "The verified candidate source repository is invalid"
+        )
+    if (
+        not isinstance(diff_sha, str)
+        or re.fullmatch(r"[0-9a-f]{64}", diff_sha) is None
+    ):
+        raise GitHubPublicationRejected(
+            "The verified candidate diff must have a lowercase SHA-256"
+        )
+    if (
+        not isinstance(tree, Mapping)
+        or not isinstance(hashes, Mapping)
+        or not isinstance(preimage_hashes, Mapping)
+    ):
+        raise GitHubPublicationRejected(
+            "The verified candidate tree and hashes must be mappings"
+        )
+    try:
+        tree_keys = set(tree.keys())
+        hash_keys = set(hashes.keys())
+        preimage_keys = set(preimage_hashes.keys())
+    except TypeError as exc:
+        raise GitHubPublicationRejected(
+            "The verified candidate contains invalid paths"
+        ) from exc
+    if not tree_keys or tree_keys != hash_keys or tree_keys != preimage_keys:
+        raise GitHubPublicationRejected(
+            "The verified candidate tree and hash paths do not match exactly"
+        )
+
+    files: list[tuple[str, bytes, str, str]] = []
+    total_bytes = 0
+    for path in sorted(tree_keys):
+        if not isinstance(path, str) or not _safe_candidate_path(path):
+            raise GitHubPublicationRejected(
+                "The verified candidate contains an unsafe repository path"
+            )
+        content = tree[path]
+        expected_hash = hashes[path]
+        preimage_hash = preimage_hashes[path]
+        if not isinstance(content, bytes):
+            raise GitHubPublicationRejected(
+                f"Candidate content must be immutable bytes: {path}"
+            )
+        if len(content) > MAX_CANDIDATE_BLOB_BYTES:
+            raise GitHubPublicationRejected(
+                f"Candidate file exceeds the bounded publication size: {path}"
+            )
+        total_bytes += len(content)
+        if total_bytes > MAX_CANDIDATE_BLOB_BYTES:
+            raise GitHubPublicationRejected(
+                "The verified candidate exceeds the bounded total publication size"
+            )
+        if (
+            not isinstance(expected_hash, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
+            or hashlib.sha256(content).hexdigest() != expected_hash
+        ):
+            raise GitHubPublicationRejected(
+                f"Candidate bytes did not match the verifier SHA-256: {path}"
+            )
+        if (
+            not isinstance(preimage_hash, str)
+            or re.fullmatch(r"[0-9a-f]{64}", preimage_hash) is None
+        ):
+            raise GitHubPublicationRejected(
+                f"Candidate preimage did not contain a verifier SHA-256: {path}"
+            )
+        files.append((path, content, expected_hash, preimage_hash))
+    return _CandidateSnapshot(
+        base_sha=base_sha,
+        repository_url=repository_url,
+        unified_diff_sha256=diff_sha,
+        files=tuple(files),
+    )
+
+
+def _safe_candidate_path(path: str) -> bool:
+    if (
+        not path
+        or len(path) > 1_000
+        or path.startswith("/")
+        or path.endswith("/")
+        or "\\" in path
+        or "\x00" in path
+    ):
+        return False
+    parts = path.split("/")
+    return all(
+        part not in {"", ".", ".."} and part.casefold() != ".git"
+        for part in parts
+    )
+
+
+def _pull_request_fingerprint(
+    repository: GitHubRepository,
+    snapshot: _CandidateSnapshot,
+) -> str:
+    intent = {
+        "schema": "ipromise.github-draft-pr.v1",
+        "repository": {
+            "id": repository.id,
+            "fullName": repository.full_name,
+        },
+        "baseSha": snapshot.base_sha,
+        "repositoryUrl": snapshot.repository_url,
+        "unifiedDiffSha256": snapshot.unified_diff_sha256,
+        "files": [
+            {
+                "path": path,
+                "preimageSha256": preimage_sha256,
+                "candidateSha256": candidate_sha256,
+            }
+            for path, _content, candidate_sha256, preimage_sha256 in snapshot.files
+        ],
+    }
+    canonical = json.dumps(
+        intent, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _pull_request_branch(fingerprint: str) -> str:
+    return f"ipromise/promise-drift-{fingerprint[:20]}"
+
+
+def _git_blob_sha(content: bytes) -> str:
+    header = f"blob {len(content)}\0".encode("ascii")
+    return hashlib.sha1(header + content, usedforsecurity=False).hexdigest()
 
 
 def _safe(value: str, limit: int) -> str:

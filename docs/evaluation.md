@@ -79,8 +79,9 @@ These are planned targets, not current results:
 - A duplicate event produces exactly one PR.
 - An unsafe candidate and incomplete evidence both fail closed.
 - A fresh-machine setup rehearsal follows the final README successfully.
-- If Cloud Run Sandbox misses its reliability gate, the same workflow succeeds
-  through the Cloud Build verifier backend and the architecture/demo are updated.
+- The implemented Cloud Build verifier completes repeated deployed runs within its
+  deadline. Any future Cloud Run Sandbox backend is adopted only after it passes the
+  same contract and reliability gate.
 
 ## Result-record template
 

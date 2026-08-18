@@ -7,7 +7,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from .models import AuditRun
+from .models import (
+    AuditRun,
+    VerificationArtifactBinding,
+    VerifiedCandidateCheckpoint,
+)
 
 
 class FirestoreRunStore:
@@ -208,10 +212,38 @@ class FirestoreRunStore:
             "startedAt": run.started_at,
             "updatedAt": run.updated_at,
             "payload": run.model_dump(mode="json", by_alias=True),
+            "verifiedCandidate": (
+                run.verified_candidate.model_dump(mode="json", by_alias=True)
+                if run.verified_candidate is not None
+                else None
+            ),
+            "verificationBinding": (
+                run.verification.artifact_binding.model_dump(
+                    mode="json", by_alias=True
+                )
+                if run.verification is not None
+                and run.verification.artifact_binding is not None
+                else None
+            ),
         }
 
     @staticmethod
     def _decode(document: dict[str, Any] | None) -> AuditRun:
         if not document or not isinstance(document.get("payload"), dict):
             raise RuntimeError("Firestore returned an invalid audit document")
-        return AuditRun.model_validate(document["payload"])
+        run = AuditRun.model_validate(document["payload"])
+        raw_binding = document.get("verificationBinding")
+        if raw_binding is not None:
+            if run.verification is None:
+                raise RuntimeError(
+                    "Firestore returned a verification binding without a receipt"
+                )
+            run.verification.checkpoint_artifact_binding(
+                VerificationArtifactBinding.model_validate(raw_binding)
+            )
+        raw_candidate = document.get("verifiedCandidate")
+        if raw_candidate is not None:
+            run.checkpoint_verified_candidate(
+                VerifiedCandidateCheckpoint.model_validate(raw_candidate)
+            )
+        return run

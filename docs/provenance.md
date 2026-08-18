@@ -1,6 +1,6 @@
 # Project provenance and third-party materials
 
-Last reviewed: **2026-08-17 AEST**
+Last reviewed: **2026-08-18 AEST**
 
 This document supports the All Things Agentic Hackathon's new-project,
 originality, licensing, data-authorization, and pre-existing-work disclosures. It
@@ -52,11 +52,15 @@ their licenses and attribution requirements when the repository becomes public.
 
 ## External systems
 
-The local MVP includes a GitHub App connection and issue publisher, but no live
-GitHub receipt has yet been captured. Tests use an in-process fake of the GitHub
-API. The final submission may use only an entrant-authorized repository, and the
-App's external-action flag defaults off. Email is not implemented. Record the
-authorized demo repository and real receipt here before submission.
+The local MVP includes a GitHub App connection, issue fallback, Cloud Build verifier
+adapter, and exact-byte draft-PR publisher, but no live Cloud Build or GitHub
+workflow receipt has yet been captured. Tests use controlled in-process gateways
+for those external APIs. The executable repair is locked to the public
+entrant-owned iPromise repository and one exact two-file template; general
+repository repair is not claimed. The final submission may act only on an
+entrant-authorized installation, and both the verifier backend and GitHub action
+flag default off. Email is not implemented. Record the authorized demo repository
+and real receipts here before submission.
 
 Google Cloud runtime services and Gemini output will be generated for this entry.
 No project may be described as deployed, model-backed, or externally actioning

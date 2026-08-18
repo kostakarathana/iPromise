@@ -176,7 +176,18 @@ The listed cash pool is $180,000. It includes a $50,000 Grand Prize; $20,000 for
 
 Do not silently invent these. Resolve them from product evidence or explicit user direction and record the decisions in durable project documentation:
 
-- Solo/team/organization entrant status and relevant prize eligibility.
+- Entrant status: **solo individual**, confirmed by the entrant on **2026-08-18
+  AEST**. The entrant confirms being above the local age of majority and having
+  no employment conflict. Optimize the secondary-prize strategy for the
+  Individual/Hobbyist awards, subject to a final full Official Rules eligibility
+  check immediately before submission.
 - Whether multimodality or an additional Google AI model genuinely strengthens the experience.
 - Demo script, evaluation plan, and judge-access strategy.
-- Cloud-credit request and redemption status.
+- Cloud-credit request: **submitted 2026-08-17 AEST** through the current official
+  Resources-page form for the Taskmaster track, using the exact Devpost account
+  email. Do not submit another request unless Google/Devpost explicitly denies it.
+  Approval, code receipt, redemption, and expiry evidence remain pending. The
+  Codex task has an hourly Gmail monitor for the approval/code email; it must not
+  reveal or redeem a code without the entrant's explicit request. The
+  Google Cloud project `ipromise-agentic-2026` was linked to its billing account
+  on **2026-08-18 AEST** and independently verified with the Google Cloud CLI.

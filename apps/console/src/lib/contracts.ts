@@ -120,6 +120,13 @@ export const verificationSchema = z.object({
   isolated: z.boolean(),
   publishable: z.boolean(),
   detail: z.string(),
+  buildId: z.string().min(1).nullable().optional(),
+  logUrl: z
+    .string()
+    .url()
+    .refine((value) => value.startsWith("https://"), "Expected an HTTPS URL")
+    .nullable()
+    .optional(),
 }).strict();
 
 export const githubRepositorySchema = z.object({
