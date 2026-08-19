@@ -710,10 +710,19 @@ class AuditService:
                 and run.verified_candidate is not None
             ):
                 return await self._dispatch_pr_with_lease(run, selected_pr)
+            if not self.settings.github_actions_enabled:
+                fallback_reason = (
+                    "Verified draft PR publication is disabled for this run; "
+                    "no external action was attempted."
+                )
+            else:
+                fallback_reason = (
+                    "Verified draft PR could not be dispatched because its exact "
+                    "candidate or selected repository was unavailable."
+                )
             self._select_issue_fallback(
                 run,
-                "Verified draft PR could not be dispatched because its exact "
-                "candidate, repository, or external-action configuration was unavailable.",
+                fallback_reason,
             )
             await self.store.save(run)
 
@@ -796,7 +805,11 @@ class AuditService:
                     selected_pr.reason = (
                         "Existing exact draft PR reconciled"
                         if receipt.reconciled
-                        else "Verified exact candidate published as a draft with no merge authority"
+                        else (
+                            "Verified exact candidate published as a draft. "
+                            "The implemented publisher exposes no merge or deploy "
+                            "operation and creates draft pull requests only."
+                        )
                     )
                     finish_stage(run, f"GitHub draft PR #{receipt.number} opened")
                     try:
