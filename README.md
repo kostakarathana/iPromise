@@ -63,7 +63,9 @@ services/
 docs/             Architecture, ADRs, threat model, evaluation, demo, evidence matrix
 ```
 
-## Required final stack
+## Deployed stack
+
+![iPromise deployed architecture](docs/assets/architecture.png)
 
 - Gemini 3.5 Flash through Vertex AI
 - Google Agent Development Kit (ADK)
@@ -75,10 +77,18 @@ Local demonstration adapters are allowed for development but are labeled and can
 
 ## Run the local MVP
 
-Prerequisites:
+Prerequisites (the same versions used by the release workflow):
 
-- Node.js 24 and pnpm 11
-- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- macOS or Linux with a POSIX shell; Windows users should run the commands in WSL
+- Node.js 24 with Corepack and pnpm 11.19.0
+- Python 3.12 and [uv 0.12.1](https://docs.astral.sh/uv/)
+
+Enable the repository-pinned package manager before installing:
+
+```bash
+corepack enable
+corepack prepare pnpm@11.19.0 --activate
+```
 
 Install locked dependencies once:
 
@@ -118,13 +128,13 @@ the Cloud Run source context. Service-specific instructions are in
 [`apps/demo_saas`](apps/demo_saas/README.md), and
 [`services/agent`](services/agent/README.md).
 
-The local workstation uses the project wrapper [`scripts/gcloud`](scripts/gcloud)
-for the upcoming cloud milestone. A fresh clone can follow Google's
+The deployment workflow can use the project wrapper [`scripts/gcloud`](scripts/gcloud).
+A fresh clone can follow Google's
 [versioned archive instructions](https://cloud.google.com/sdk/docs/downloads-versioned-archives)
 or use a normal system installation. Cloud credentials and resources are not
 required for the truthful local MVP.
 
-Never commit credentials. Cloud deployments will use Secret Manager and scoped
+Never commit credentials. The deployed services use Secret Manager and scoped
 runtime identities rather than local environment files.
 
 ## Connect a GitHub repository
@@ -179,4 +189,6 @@ See [AGENTS.md](AGENTS.md) for the binding project operating rules,
 [hackathon evidence matrix](docs/evidence-matrix.md) for implementation and
 submission evidence. The [Devpost submission draft](docs/devpost-submission-draft.md)
 keeps required listing copy and remaining receipts explicit. Project dates, AI assistance, libraries, assets, and
-synthetic-data ownership are recorded in [provenance](docs/provenance.md).
+synthetic-data ownership are recorded in [provenance](docs/provenance.md). The
+[third-party notices](THIRD_PARTY_NOTICES.md) explain dependency licensing and
+the current all-rights-reserved status of original project code.

@@ -7,15 +7,17 @@ request is primary only when Cloud Build proves the expected failing baseline, t
 green hidden control, the regression suite, source provenance, and the exact bytes
 later published through Git objects. An evidence-backed issue is the safe fallback
 when that gate cannot pass. Email is off. The complete verifier-to-PR path is covered
-by controlled integration tests; no live Cloud Build or GitHub receipt is claimed.
+by controlled integration tests and a correlated live Cloud Build/GitHub proof
+run. Current evidence and its narrow scope are recorded in
+[`docs/implementation-status.md`](../../docs/implementation-status.md).
 
 ## Run the first MVP
 
-Start `apps/demo_saas` on port 8081 first. Then, using Python 3.12:
+Start `apps/demo_saas` on port 8081 first. Then, using Python 3.12 and uv 0.12.1:
 
 ```bash
 cp .env.example .env
-uv sync --extra dev --extra google --extra github
+uv sync --extra dev --extra google --extra github --locked
 IPROMISE_MODE=demonstration \
 IPROMISE_COMPILER=deterministic \
 IPROMISE_DEMO_BASE_URL=http://127.0.0.1:8081 \
@@ -102,7 +104,7 @@ from the locked public iPromise snapshot; it is not a general code generator.
 ## Tests
 
 ```bash
-uv sync --extra dev --extra google --extra github
+uv sync --extra dev --extra google --extra github --locked
 uv run --extra dev --extra google --extra github pytest
 ```
 

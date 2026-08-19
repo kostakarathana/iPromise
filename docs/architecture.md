@@ -7,6 +7,11 @@ one verified draft PR, and remote duplicate reconciliation passed on 2026-08-18
 AEST. Scheduler is intentionally paused after proof. See [implementation
 status](implementation-status.md).
 
+![Static judge-facing iPromise architecture](assets/architecture.svg)
+
+The static diagram above is the submission-ready view; the Mermaid diagrams below
+remain the maintainable technical source.
+
 iPromise is a scheduled promise-to-proof-to-action workflow. It is designed for the
 hackathon's **Taskmaster** track and deliberately avoids a chat-first interaction.
 The authoritative eligibility and submission requirements are the
@@ -22,7 +27,8 @@ flowchart LR
     agent --> target["Synthetic reference SaaS<br/>Cloud Run"]
     agent --> state["Runs, OAuth, repository state<br/>Firestore"]
     agent --> verifier["Cloud Build<br/>fixed red/green verifier"]
-    verifier --> github["GitHub App<br/>repo-scoped PR or issue"]
+    verifier -->|"Bound verification receipt"| agent
+    agent --> github["GitHub App<br/>repo-scoped PR or issue"]
     github --> pr["Exact-byte draft PR<br/>or issue fallback"]
     agent --> telemetry["Cloud Logging"]
 ```
