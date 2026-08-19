@@ -850,7 +850,7 @@ class AuditService:
         pull_request.verified = False
         pull_request.reason = reason
         issue.state = ActionState.PLANNED
-        issue.reason = "A verified draft PR was not safely publishable; issue fallback selected."
+        issue.reason = reason
 
     async def _dispatch_issue_with_lease(
         self, run: AuditRun, selected_issue: PlannedAction

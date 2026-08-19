@@ -375,6 +375,9 @@ async def test_verifier_runs_with_external_actions_disabled(settings) -> None:
         "Verified draft PR publication is disabled for this run; "
         "no external action was attempted."
     )
+    issue = next(action for action in run.actions if action.kind == ActionKind.ISSUE)
+    assert issue.state == ActionState.PLANNED
+    assert issue.reason == pull_request.reason
 
 
 @pytest.mark.asyncio
