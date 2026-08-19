@@ -1,4 +1,4 @@
-"""Thread-safe, ephemeral stores with one intentional deletion defect."""
+"""Thread-safe, ephemeral stores for the synthetic deletion control."""
 
 from __future__ import annotations
 
@@ -76,9 +76,8 @@ class SyntheticStore:
             virtual_processed_at = profile.deletion_requested_at + timedelta(hours=1)
             self._virtual_processed[account_id] = virtual_processed_at
 
-            # INTENTIONAL DEMO DEFECT:
-            # `self._analytics_profiles.pop(account_id, None)` is omitted so that
-            # iPromise can detect a real contradiction and propose a bounded fix.
+            # Complete deletion across both owned synthetic stores.
+            self._analytics_profiles.pop(account_id, None)
 
         return ProcessDeletionResponse(
             account_id=account_id,
