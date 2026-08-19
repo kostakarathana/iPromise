@@ -1,10 +1,20 @@
 # Devpost submission draft
 
-Status: **working copy — not submitted.** The deployed Cloud Run, ADK, Gemini,
-Firestore, Cloud Scheduler, Cloud Build, and GitHub draft-PR path has live proof,
-including ten consecutive verifier passes and duplicate suppression. Do not submit until
-the remaining video, access, rules, and release-freeze gates below are complete.
+Status: **working copy — private Devpost draft saved at 2/5 steps; not
+submitted.** The persisted draft contains the iPromise title, elevator pitch,
+and architecture image. Project Details and the remaining Additional Info fields
+are incomplete. The deployed Cloud Run, ADK,
+Gemini, Firestore, Cloud Scheduler, Cloud Build, and GitHub draft-PR path has
+final-source live proof, including the historical ten-run reliability gate, final
+PR #14, and duplicate suppression. A 3:30 English video master with burned
+captions exists locally. Do not submit until the remaining public-video,
+private-field, rules, and release-freeze gates below are complete.
 Last reviewed 2026-08-19 AEST.
+
+The existing draft was created on 2026-08-17 during the submission period. Its
+public preview retains Devpost's earlier `/software/handrail` slug from a brief
+draft-name change before iPromise was locked. Keep this draft; do not create a
+duplicate or modify any unrelated Devpost project.
 
 ## Listing fields
 
@@ -13,23 +23,22 @@ Last reviewed 2026-08-19 AEST.
 - **Tagline:** Customer promises should behave like tests.
 - **Repository:** https://github.com/kostakarathana/iPromise
 - **Hosted application:** https://ipromise-console-ipj6vqlg2q-uc.a.run.app
-- **Public video:** `[add public YouTube or Vimeo URL; maximum 4:00]`
-- **Private testing instructions:** `[add console access code only in Devpost's
-  private field; never place it in public copy or the video]`
+- **Public video:** `[pending public YouTube or Vimeo upload; local master is 3:30]`
+- **Private testing instructions:** use the exact private-field copy below, and
+  insert the console access code only in Devpost at save time
 - **Google SDK used:** Google Agent Development Kit (ADK) 2.7.0 and Google Gen AI SDK 2.18.1
 - **Reproducible README:** Yes — clean-checkout prerequisites, locked installs,
   local verification, cloud deployment, and rollback are documented
 - **Project start date:** 08-17-26 (within the submission period; confirmed by
   the repository creation time and entrant-local initial-commit timestamp)
 - **Architecture image:** [`docs/assets/architecture.png`](assets/architecture.png)
-- **Video captions/language:** English; `[confirm captions after final upload]`
+- **Video captions/language:** English narration with burned English captions;
+  `[confirm public playback after final upload]`
 
 ## Elevator pitch
 
-iPromise is CI for customer promises. It turns a supported privacy commitment
-into a scheduled executable control, tests what the product actually does, and
-routes an evidence-backed engineering action when reality drifts from the words
-customers were given.
+iPromise turns a supported customer promise into a recurring test and a verified
+draft PR when product behavior drifts.
 
 ## Inspiration
 
@@ -43,7 +52,8 @@ continuously testable without pretending to make a legal conclusion.
 ## What it does
 
 The hackathon workflow focuses on one exact account-deletion commitment. A manual
-or six-hour scheduled trigger starts the same autonomous workflow. iPromise:
+trigger, or the six-hour scheduled trigger when deliberately resumed, starts the
+same autonomous workflow. iPromise:
 
 1. captures the exact source text, URL, time, and content hash;
 2. uses Gemini 3.5 Flash through Google ADK to compile that text into a strict,
@@ -98,7 +108,7 @@ GitHub responses reconcile before another write is attempted.
   authorized to the entrant-owned GitHub App.
 - No real customer data is required or used in the primary workflow.
 - Dependencies, AI assistance, project dates, and third-party materials are
-  itemized in the [provenance record](https://github.com/kostakarathana/iPromise/blob/REPLACE_WITH_FROZEN_SHA/docs/provenance.md).
+  itemized in the [provenance record](https://github.com/kostakarathana/iPromise/blob/v1.0.0-hackathon-submission/docs/provenance.md).
 
 ## Challenges and learnings
 
@@ -131,31 +141,71 @@ pnpm verify
 
 Cloud setup, exact health endpoints, GitHub App configuration, private judge
 access, correlated logging proof, and rollback are documented in
-[deployment guide](https://github.com/kostakarathana/iPromise/blob/REPLACE_WITH_FROZEN_SHA/docs/deployment.md).
+[deployment guide](https://github.com/kostakarathana/iPromise/blob/v1.0.0-hackathon-submission/docs/deployment.md).
+
+## Private testing instructions
+
+Paste this section only into Devpost's private testing field. Replace the first
+line at save time; never add the credential to this repository, the public
+description, or the video.
+
+```text
+Console access code: <insert the Secret Manager value here>
+
+1. Open https://ipromise-console-ipj6vqlg2q-uc.a.run.app and enter the access
+   code when prompted.
+2. The preloaded completed run is the final proof state. It links to verified
+   draft PR #14 and shows the exact promise, scoped evidence, Cloud Build
+   FAIL/PASS/PASS receipt, and action trail.
+3. You may click Run audit to execute the full Gemini 3.5 Flash, Google ADK,
+   synthetic-control, and Cloud Build workflow. It normally finishes in about a
+   minute; if Cloud Build queues, leave the page open rather than clicking
+   again. The current judge-safe deployment has external GitHub actions
+   disabled, so a rerun will not create another PR or issue.
+4. The GitHub App is already connected only to kostakarathana/iPromise. Please
+   do not disconnect or change the repository selection.
+5. The service uses only disclosed synthetic data. Results are scoped technical
+   verdicts, not legal conclusions.
+```
 
 ## Final submission gate
 
 Delete this section from the public listing only after all items are verified:
 
-- [ ] Every `REPLACE_WITH_*` placeholder and commit-pinned link is resolved.
-- [ ] The linked repository contains the tested source and a reproducible README.
+- [ ] Every release placeholder is resolved. Release-pinned links target the
+      planned immutable tag `v1.0.0-hackathon-submission`; this remains unchecked
+      until that tag exists and its links pass logged-out verification.
+- [x] The linked repository contains deployed source
+      `a4e7a59f89a60d2ba0ad087d884836d22e5d39e4` and a reproducible README.
 - [x] A live run records `modelInvoked: true`, Google ADK, the eligible Gemini
       model ID, and the Cloud Run revision.
-- [ ] The hosted console works from a clean judge-equivalent browser using the
-      private access code. The authenticated hosted workflow has been exercised,
-      but this final rehearsal remains.
-- [x] The fixed authorized iPromise repository received exactly one real,
-      independently verified and reconciled draft PR. Same-key and distinct-run
-      replay created no duplicate. A forced live verifier-failure issue fallback
-      remains optional evidence and has not been claimed.
-- [ ] The live action is correlated across the persisted run, Cloud Build, and
-      GitHub artifact; capture the same run visibly in the console and Cloud
-      Logging for the final video.
+- [x] The hosted console passed a clean judge-equivalent access check:
+      unauthenticated `/api/audit` returned 401, `/api/health` returned 200, and
+      a fresh authenticated session returned product content without printing or
+      exposing the Secret Manager code. Inserting that code into Devpost's
+      private field remains pending.
+- [x] Final creator run `run_74ea1919b21a47b9846a4d3c5efb48b8` opened one
+      real, independently verified draft [PR #14](https://github.com/kostakarathana/iPromise/pull/14).
+      Distinct-run and same-key replay created no duplicate. Earlier proof PRs #7
+      and #12 are closed. A forced live verifier-failure issue fallback remains
+      optional evidence and has not been claimed.
+- [x] The final live action is correlated across the persisted run, Cloud Build
+      `e1a7a7a5-1878-41d6-9760-27c7085ae332`, exact GitHub head, green repository
+      check, and creator receipts shown in the local recording. The continuous
+      filmed segment is explicitly the distinct duplicate run
+      `run_a2dca42370fd42bda69f2eff361c3bfd`, which reconciles to PR #14; it is not
+      represented as the creator. Public playback remains a separate gate.
 - [x] The architecture diagram matches the deployed system and has a static PNG
       in the format accepted by Devpost.
-- [ ] The public video is in English, no longer than four minutes, shows the
-      working application, and visibly proves the Google Cloud backend.
-- [x] Entrant eligibility is confirmed for a solo Australian individual over the
-      local age of majority, with no employer entry or team acceptance required.
-      The repository is public; provenance and third-party notices are recorded.
+- [ ] The lawful 3:30 local video master is in English with burned captions and
+      records the working application. Google Cloud Text-to-Speech licensing,
+      decode, timing, caption, audio, privacy, and checksum QA passed. Complete
+      public upload, processing, and logged-out playback before checking this
+      item.
+- [ ] Entrant eligibility is fully self-attested. Solo status, Australian
+      residence, age of majority, and no employment conflict are confirmed; the
+      entrant must still confirm the remaining sanctions/export, Contest Entity
+      family/household, government-role, internet-access, and preferential-support
+      conditions in the Official Rules. The repository is public; provenance and
+      third-party notices are recorded.
 - [ ] The submission-linked commit and artifacts are frozen for judging.

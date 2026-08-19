@@ -1,10 +1,12 @@
 # iPromise threat model
 
 Status: the locked verifier-to-draft-PR path has live Cloud Build and GitHub
-receipts, including same-key and distinct-run duplicate suppression. Issue fallback
-remains integration-tested but was not triggered in the successful live proof;
-Model Armor, generalized repository repair, artifact storage, and email remain
-pending and are not treated as current evidence.
+receipts on the final deployed source, including same-key and distinct-run
+duplicate suppression to draft PR #14. External actions are disabled on the
+current judge-safe revision and Cloud Scheduler is paused. Issue fallback remains
+integration-tested but was not triggered in the successful live proof; Model
+Armor, generalized repository repair, artifact storage, and email remain pending
+and are not treated as current evidence.
 
 ## Scope and assumptions
 
@@ -61,7 +63,7 @@ code, or contacts customers.
 | Unauthorized target testing | Project configuration | Explicit repository, URL, staging target, control, and action authorization | Block run |
 | Evidence tampering | Storage/UI | Content hashes, immutable object naming, signed metadata, least-privilege write path | Mark unverifiable |
 | PII retained in artifacts | Capture/storage | Synthetic data by default, minimization/redaction, TTL lifecycle, private bucket | Quarantine/delete artifact |
-| Resource exhaustion or cost attack | Public trigger/cloud | Authentication, quotas, concurrency one, max instances, timeouts, budgets | Throttle/fail safely |
+| Resource exhaustion or cost attack | Public trigger/cloud | Authentication, quotas, bounded per-service concurrency, max-instance caps, timeouts, and budgets | Throttle/fail safely |
 | Supply-chain compromise | Build/runtime | Lockfiles, dependency scanning, trusted base images, pinned build inputs | Block release |
 | Future Sandbox Preview instability | Agent -> verifier | Keep the proven Cloud Build backend behind the same interface unless Sandbox passes repeated deployed reliability gates | Retain Cloud Build |
 
@@ -86,6 +88,9 @@ complete action policy is in
 - A patch touching protected files never reaches a verifier or remote branch.
 - Failed, timed-out, missing, and stale evidence never produces a PR.
 - Replaying the same event produces one run identity and one external action.
+- Final live proof: distinct run `run_a2dca42370fd42bda69f2eff361c3bfd`
+  reconciled to PR #14, and replaying its trigger key returned the same run,
+  build, and PR while the open final-fingerprint PR count stayed one.
 - The candidate cannot alter the fixed build program, images, commands, source URL,
   hidden control, or destination; the build mounts no runtime/GitHub secrets and its
   identity has only the documented Logging role. Record that Cloud Build dependency

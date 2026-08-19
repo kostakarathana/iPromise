@@ -2,10 +2,14 @@
 
 Status: the Cloud Run, Google ADK, Gemini 3.5 Flash, Firestore, Cloud Scheduler,
 Secret Manager, Cloud Logging, Cloud Build, and GitHub draft-PR vertical slice is
-deployed with correlated live proof. Ten consecutive actions-off verifier runs,
-one verified draft PR, and remote duplicate reconciliation passed on 2026-08-18
-AEST. Scheduler is intentionally paused after proof. See [implementation
-status](implementation-status.md).
+deployed with correlated live proof. Ten consecutive historical actions-off
+verifier runs and final-source creator run
+`run_74ea1919b21a47b9846a4d3c5efb48b8` culminated in verified draft
+[PR #14](https://github.com/kostakarathana/iPromise/pull/14); distinct-run and
+same-key reconciliation created no duplicate. The current judge-safe agent has
+GitHub actions disabled, and Scheduler is intentionally paused after proof. See
+[implementation status](implementation-status.md) and the [submission release
+record](submission-release.md).
 
 ![Static judge-facing iPromise architecture](assets/architecture.svg)
 
@@ -92,9 +96,9 @@ executing the same nonterminal run concurrently.
 
 ## MVP claim and control
 
-The captured reference promise states that deleting an account removes its
-profile and activity data from active systems within a stated deadline. The
-registered `privacy.account_deletion.v1` control:
+The captured reference promise states: “When you delete your account, we remove
+your profile from our app and analytics system within 24 hours.” The registered
+`privacy.account_deletion.v1` control:
 
 1. creates a stable, run-derived pseudonymous synthetic user;
 2. records a synthetic deletion request old enough to cross the stated deadline;

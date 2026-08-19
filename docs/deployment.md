@@ -1,6 +1,6 @@
 # Minimum Google Cloud deployment
 
-Status: deployed and live-proofed on **2026-08-18 AEST**. This file remains the
+Status: deployed and final-source live-proofed on **2026-08-19 AEST**. This file remains the
 reproduction procedure; deployment claims come from the exact receipts recorded
 below, not from configuration files alone.
 
@@ -11,7 +11,12 @@ below, not from configuration files alone.
   `https://ipromise-agent-ipj6vqlg2q-uc.a.run.app`
 - Synthetic reference SaaS:
   `https://ipromise-demo-saas-ipj6vqlg2q-uc.a.run.app`
-- Current agent revision: `ipromise-agent-00007-8p9`
+- Deployed product source:
+  `a4e7a59f89a60d2ba0ad087d884836d22e5d39e4`
+- Current judge-safe agent revision: `ipromise-agent-00013-kmv`
+- Recorded actions-on agent revision: `ipromise-agent-00012-2gm`
+- Console revision: `ipromise-console-00012-kk9`
+- Synthetic reference SaaS revision: `ipromise-demo-saas-00010-xk5`
 - Live health: console `/api/health`, agent `/health`, and synthetic SaaS `/health`
   each returned HTTP 200; `/healthz` is not the deployed Cloud Run probe path
 - Model/framework: `gemini-3.5-flash` through Vertex AI at `global`, coordinated
@@ -20,34 +25,42 @@ below, not from configuration files alone.
   Secret Manager, and Cloud Logging
 - Trigger safety: the six-hour Cloud Scheduler job is **PAUSED** after the proof
   sequence
-- External-action configuration: enabled on the current agent revision for the
-  bounded draft-PR/issue publisher; the paused Scheduler prevents unattended runs
+- External-action configuration: disabled on the current judge-safe revision.
+  It was enabled only on the recorded revision for the bounded controlled proof
 - Repository authority: GitHub App `ipromise-promise-auditor`, installed only on
   `kostakarathana/iPromise`, with Metadata read and Contents, Pull requests, and
   Issues read/write; no Actions, Workflows, Administration, Secrets, or
   Deployments permission. The implemented publisher exposes no merge or deploy
   operation and creates draft PRs only.
 
-Against frozen base `b5c2badacc506b78c6eed314f155ecbc2188198b`, ten
+As a historical reliability gate, against base
+`b5c2badacc506b78c6eed314f155ecbc2188198b`, ten
 consecutive actions-off audits completed in 448.5 seconds. Every run produced a
 unique run, Cloud Build, and synthetic fixture ID; expected `FAIL / PASS / PASS`;
 an exact candidate-tree match; and a publishable receipt. The complete identifiers
-are recorded in the [measured evaluation](evaluation.md#measured-deployed-release-result).
+are recorded in the [measured evaluation](evaluation.md#historical-ten-run-reliability-gate).
 No GitHub write occurred during this reliability gate.
 
-After the gate, controlled run `run_806d1fc144344baebb757747d1b56e83`
-used build `f4cbf983-db73-4bf5-9504-93c253a4b98b` and opened verified draft
-[PR #7](https://github.com/kostakarathana/iPromise/pull/7) through the App.
-Same-key run `run_60edca0afdd34918805f72464662b340` and distinct run
-`run_6babae8849fc46fca2d522caf3e2ce98`, with builds
-`75a9e18b-766f-48e4-ad10-06b52cac0025` and
-`5e77604a-5f19-4be3-9988-48809c48125c`, both reconciled to that same PR. Final
-checks found one deterministic branch, one open draft PR, zero issues, zero
-nonterminal Firestore runs, and no execution or action leases.
+For the final deployed source, controlled creator run
+`run_74ea1919b21a47b9846a4d3c5efb48b8` used synthetic fixture
+`syn_ca95780e5f9067a4641fd15384f90dd1` and build
+`e1a7a7a5-1878-41d6-9760-27c7085ae332` to open verified draft
+[PR #14](https://github.com/kostakarathana/iPromise/pull/14) through the App.
+The exact PR head `a460858672ab176a4142c600fb9028f1b042a373` on branch
+`ipromise/promise-drift-085cacf0084a2728d277` passed the
+[repository release gate](https://github.com/kostakarathana/iPromise/actions/runs/32219511076/job/95967239117).
+Distinct trigger run `run_a2dca42370fd42bda69f2eff361c3bfd`, build
+`e7966c07-97fd-4436-b7a8-8a0a1d4e86fd`, reconciled to that same PR. A replay of
+the duplicate trigger key returned the same run, build, and PR, leaving one open
+draft PR for the final fingerprint. Earlier proof PRs #7 and #12 are closed.
+Final checks found zero nonterminal Firestore runs and no execution or action
+leases. The complete immutable-facing record is in
+[submission-release.md](submission-release.md).
 
 The proof uses only the owned synthetic reference SaaS and a locked two-file
 repair. It is evidence for that scoped control, not a legal or blanket compliance
-claim. Devpost has **not** been submitted.
+claim. The private Devpost draft is saved at 2/5 steps and has not been
+submitted.
 
 This procedure packages and deploys the smallest eligible Google Cloud slice:
 

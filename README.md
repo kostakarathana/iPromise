@@ -12,24 +12,42 @@ The hackathon MVP focuses on one complete Taskmaster workflow: verifying an acco
 
 The complete vertical slice is deployed on Google Cloud. The judge console is
 hosted at `https://ipromise-console-ipj6vqlg2q-uc.a.run.app`; its authenticated
-agent endpoint is `https://ipromise-agent-ipj6vqlg2q-uc.a.run.app`. Current agent
-revision `ipromise-agent-00007-8p9` runs Google ADK with
+agent endpoint is `https://ipromise-agent-ipj6vqlg2q-uc.a.run.app`. The deployed
+product source is commit `a4e7a59f89a60d2ba0ad087d884836d22e5d39e4`.
+The judge-safe agent revision `ipromise-agent-00013-kmv` runs Google ADK with
 `gemini-3.5-flash` through Vertex AI's `global` location, persists state in
-Firestore, and uses Cloud Build for the fixed verifier. Cloud Scheduler is
-intentionally **PAUSED** after controlled proof runs, so it cannot create
-unattended external actions.
+Firestore, and uses Cloud Build for the fixed verifier. GitHub publication is
+disabled on that current revision, and Cloud Scheduler is intentionally
+**PAUSED**, so judge access cannot create unattended external actions.
 
-On base commit `b5c2badacc506b78c6eed314f155ecbc2188198b`, ten consecutive
-actions-off audits completed the full expected-red → green-control →
-green-regression gate in 448.5 seconds total. Every run reported the expected
-`FAIL / PASS / PASS`, an exact candidate tree, a publishable receipt, and unique
-run, build, and synthetic-fixture identities without writing to GitHub. After
-that safety gate, one controlled actions-on run opened the real, verified draft
-[PR #7](https://github.com/kostakarathana/iPromise/pull/7) through the scoped
-GitHub App. A same-key replay reused one logical run, and a distinct run for the
-unchanged finding reconciled to the same PR: one deterministic branch, one open
-draft PR, zero issues, and no unfinished Firestore runs or leases after proof.
-See the [truthful implementation status](docs/implementation-status.md) and
+The earlier reliability gate remains reproducible historical evidence: on base
+commit `b5c2badacc506b78c6eed314f155ecbc2188198b`, ten consecutive actions-off
+audits completed the full expected-red → green-control → green-regression
+gate in 448.5 seconds total. Every run reported `FAIL / PASS / PASS`, an exact
+candidate tree, a publishable receipt, and unique run, build, and
+synthetic-fixture identities without writing to GitHub.
+
+The final PR-creator proof used actions-on agent revision
+`ipromise-agent-00012-2gm`. Run
+`run_74ea1919b21a47b9846a4d3c5efb48b8`, synthetic fixture
+`syn_ca95780e5f9067a4641fd15384f90dd1`, and Cloud Build
+`e1a7a7a5-1878-41d6-9760-27c7085ae332` opened verified draft
+[PR #14](https://github.com/kostakarathana/iPromise/pull/14) through the scoped
+GitHub App. Its exact published head
+`a460858672ab176a4142c600fb9028f1b042a373` passed the repository release gate.
+A distinct trigger produced run `run_a2dca42370fd42bda69f2eff361c3bfd`
+and build `e7966c07-97fd-4436-b7a8-8a0a1d4e86fd`, then reconciled to that same
+PR. The final 3:30 local video records this complete distinct run as a continuous
+49-second browser-frame capture with original frame order and wall-clock timing;
+it does not claim that the filmed run created the PR. The cut removes only
+trailing post-completion frames, without accelerating or removing in-run time. It
+shows the creator Logging
+and Build receipts immediately afterward. Replaying the duplicate
+trigger key returned the same run, build, and PR; the final fingerprint has one
+branch and one open draft PR. Earlier generated proof PRs #7 and #12 are closed.
+Final checks found zero unfinished Firestore runs or leases. See the
+[submission release record](docs/submission-release.md),
+[truthful implementation status](docs/implementation-status.md), and
 [measured evaluation record](docs/evaluation.md).
 
 ## Winning workflow
@@ -181,8 +199,10 @@ environment.
 - No generated shell commands, automatic merges, or deployments
 - A finding never becomes success when evidence is unavailable
 - One visible run ID across the console, state ledger, logs, verification receipt, and external action
-- The Devpost entry has **not** been submitted; final video, frozen release, and
-  submission checks remain open
+- The final 3:30 English video master exists locally with burned captions. The
+  private Devpost draft is saved at 2/5 steps and is not submitted; public video
+  upload, remaining draft fields, immutable release creation, and submission
+  remain open.
 
 See [AGENTS.md](AGENTS.md) for the binding project operating rules,
 [architecture](docs/architecture.md), and the

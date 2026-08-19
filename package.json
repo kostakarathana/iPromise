@@ -7,6 +7,7 @@
     "dev": "./scripts/dev-local",
     "dev:console": "pnpm --dir apps/console dev",
     "build:console": "pnpm --dir apps/console build",
+    "check:links": "./scripts/check-links",
     "lint:console": "pnpm --dir apps/console lint",
     "test:console": "pnpm --dir apps/console test",
     "typecheck:console": "pnpm --dir apps/console typecheck",

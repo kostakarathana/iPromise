@@ -38,7 +38,7 @@ Relevant primary documentation includes
 [ADK graphs](https://adk.dev/graphs/),
 [Cloud Scheduler authentication](https://cloud.google.com/scheduler/docs/http-target-auth),
 [Cloud Build](https://cloud.google.com/build/docs/overview), and
-[Cloud Run](https://cloud.google.com/run/docs/overview).
+[Cloud Run](https://docs.cloud.google.com/run/docs/overview/what-is-cloud-run).
 [Model Armor](https://cloud.google.com/security/products/model-armor) is a
 supplementary screen for untrusted content, not a permissions or verdict boundary.
 
