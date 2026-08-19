@@ -1,6 +1,6 @@
 # iPromise implementation status
 
-Last reviewed: **2026-08-18 AEST**
+Last reviewed: **2026-08-19 AEST**
 
 This file distinguishes durable decisions from working software. A component is
 “Verified” only after a reproducible test or deployment artifact exists. Planned
@@ -16,12 +16,12 @@ behavior is not a product claim.
 | MVP: account-deletion promise | Decided | [ADR 0001](adr/0001-product-and-track.md) |
 | PR-first / issue-email fallback policy | Decided | [ADR 0004](adr/0004-action-policy.md) |
 | Google stack and trust boundaries | Verified live vertical slice | [Architecture ADR](adr/0002-architecture-and-google-stack.md); live Cloud Run, ADK, Gemini, Firestore, Secret Manager, Cloud Scheduler, Cloud Build, Cloud Logging, and one bounded GitHub draft-PR receipt are verified. Scheduler is intentionally paused after proof. |
-| Judge-facing architecture diagram | Documented | [Architecture](architecture.md) |
+| Judge-facing architecture diagram | Documented | [Static diagram](assets/architecture.svg) and [architecture narrative](architecture.md) |
 | Threat model | Core live boundaries verified | [Threat model](threat-model.md); scoped IAM, pinned secrets, ten actions-off verifier receipts, exact-byte PR publication, and remote duplicate reconciliation are live. Cloud Build egress remains explicitly disclosed; Model Armor, generalized repair, artifact storage, and email are pending. |
 | Evaluation and release gates | Core cloud path verified | [Evaluation](evaluation.md): ten consecutive actions-off red→green runs passed in 448.5 seconds; a controlled actions-on run opened one verified draft PR; same-key and distinct-run replay created no duplicate. Full held-out model-quality metrics remain unmeasured. |
 | Under-four-minute demo plan | Documented | [Demo script](demo-script.md); no recording yet |
 | Console information hierarchy | Decided | [Quiet evidence console ADR](adr/0005-quiet-evidence-console.md) |
-| Application code and local workflow | Verified locally | `pnpm verify`: 16 claim fixtures, 6 synthetic SaaS tests, 96 agent tests, 34 console tests, lint, typecheck, production build, and standalone package smoke |
+| Application code and local workflow | Verified locally | `pnpm verify`: 16 claim fixtures, 6 synthetic SaaS tests, 97 agent tests, 36 console tests, lint, typecheck, production build, and standalone package smoke |
 | Gemini 3.5 through Vertex AI | Verified live | Actions-on run `run_806d1fc144344baebb757747d1b56e83` records `modelInvoked=true`, exact model `gemini-3.5-flash`, and Cloud Run revision `ipromise-agent-00007-8p9`; Vertex location is `global`. |
 | Google ADK graph | Verified live | The same correlated receipt records the Google Agent Development Kit graph workflow; the exact claim was compiled and grounded before deterministic control execution. |
 | Cloud Run / Firestore / Scheduler | Verified live | Console, agent, and synthetic SaaS are healthy Cloud Run services; Firestore persisted run/action state. The OIDC six-hour Scheduler exists but is intentionally **PAUSED** after controlled proof. No nonterminal runs or execution/action leases remained after the final checks. |

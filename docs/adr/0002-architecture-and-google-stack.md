@@ -1,6 +1,6 @@
 # ADR 0002: Architecture and Google stack
 
-- Status: Accepted; actions-off Google Cloud baseline deployed, verifier/action evidence pending
+- Status: Accepted and verified in the deployed vertical slice
 - Date: 2026-08-17
 
 ## Context
@@ -12,7 +12,7 @@ show Google Cloud deployment in the demo. The binding requirements remain the
 
 ## Decision
 
-Use the following target stack:
+Use the following deployed stack:
 
 | Concern | Choice |
 | --- | --- |
@@ -31,12 +31,14 @@ Use the following target stack:
 | Secrets | Secret Manager and per-service identities |
 | Telemetry | Structured Cloud Logging receipts; OpenTelemetry/Cloud Trace remains later hardening |
 
-The model identifier must be rechecked against the live eligible model list
-before dependency lock and submission. Relevant primary documentation includes
+The deployed model identifier is `gemini-3.5-flash` at Vertex AI's `global`
+location; eligibility must still be rechecked immediately before submission.
+Relevant primary documentation includes
 [Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash),
 [ADK graphs](https://adk.dev/graphs/),
-[Pub/Sub push delivery](https://cloud.google.com/pubsub/docs/push), and
-[Cloud Run code execution](https://cloud.google.com/run/docs/code-execution).
+[Cloud Scheduler authentication](https://cloud.google.com/scheduler/docs/http-target-auth),
+[Cloud Build](https://cloud.google.com/build/docs/overview), and
+[Cloud Run](https://cloud.google.com/run/docs/overview).
 [Model Armor](https://cloud.google.com/security/products/model-armor) is a
 supplementary screen for untrusted content, not a permissions or verdict boundary.
 

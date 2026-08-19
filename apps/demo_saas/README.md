@@ -6,11 +6,12 @@ Its public `/privacy` page promises that account deletion removes a profile from
 
 ## Run locally
 
-Python 3.12 and [`uv`](https://docs.astral.sh/uv/) are required.
+Python 3.12 and [`uv` 0.12.1](https://docs.astral.sh/uv/) are required. The
+commands assume a POSIX shell; use WSL on Windows.
 
 ```bash
 cp .env.example .env
-uv sync --extra dev
+uv sync --extra dev --locked
 IPROMISE_DEMO_TOKEN=replace-with-a-long-random-value \
   uv run uvicorn ipromise_demo.app:app --host 127.0.0.1 --port 8081
 ```
@@ -30,4 +31,7 @@ The local fallback token exists only to make first-run development straightforwa
 
 ## Intentional limitation
 
-The orphaned analytics record is an intentional demo fixture, not an accidental defect. It must remain until iPromise's real patch-verification and GitHub publication path is demonstrated end to end.
+The orphaned analytics record is an intentional, repeatable baseline fixture, not
+an accidental defect. iPromise has verified and published the bounded repair as a
+real draft PR; the vulnerable baseline remains on the default branch so a judge can
+reproduce the same red-before/green-after workflow without fabricated state.

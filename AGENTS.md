@@ -18,12 +18,20 @@ Prefer a reliable, coherent, demo-ready vertical slice over feature breadth. Do 
 
 ## Source of truth and volatility
 
-Last deeply verified: **2026-08-17 AEST**.
+Last deeply verified: **2026-08-19 AEST**.
 
 - [Official Rules](https://allthingsagentichackathon.devpost.com/rules) are binding and take precedence.
 - Also monitor the [Overview](https://allthingsagentichackathon.devpost.com/), [Resources](https://allthingsagentichackathon.devpost.com/resources), [FAQ](https://allthingsagentichackathon.devpost.com/details/faqs), [Schedule](https://allthingsagentichackathon.devpost.com/details/dates), [Updates](https://allthingsagentichackathon.devpost.com/updates), and [Discussions](https://allthingsagentichackathon.devpost.com/forum_topics).
 - Recheck the official rules and updates before making a submission-critical decision and again before final submission. Record newly discovered rule changes here.
 - Treat organizer discussion replies as useful clarification, but never let them override the binding rules.
+
+The organizer's 2026-08-19 self-check update adds no new mandatory technology or
+artifact. It emphasizes that judges may rely entirely on the video, description,
+and repository; the video should name the Gemini model and agent framework
+clearly, show a real action or state change, and visibly prove Google Cloud. It
+also recommends rehearsing, removing setup/loading dead time, using a clear AI
+voiceover when useful, testing the public repository logged out, opening the
+submission form early, and uploading the video early enough for processing.
 
 Known defects and inconsistencies in the official materials require conservative handling:
 

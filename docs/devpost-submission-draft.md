@@ -4,7 +4,7 @@ Status: **working copy — not submitted.** The deployed Cloud Run, ADK, Gemini,
 Firestore, Cloud Scheduler, Cloud Build, and GitHub draft-PR path has live proof,
 including ten consecutive verifier passes and duplicate suppression. Do not submit until
 the remaining video, access, rules, and release-freeze gates below are complete.
-Last reviewed 2026-08-18 AEST.
+Last reviewed 2026-08-19 AEST.
 
 ## Listing fields
 
@@ -16,6 +16,13 @@ Last reviewed 2026-08-18 AEST.
 - **Public video:** `[add public YouTube or Vimeo URL; maximum 4:00]`
 - **Private testing instructions:** `[add console access code only in Devpost's
   private field; never place it in public copy or the video]`
+- **Google SDK used:** Google Agent Development Kit (ADK) 2.7.0 and Google Gen AI SDK 2.18.1
+- **Reproducible README:** Yes — clean-checkout prerequisites, locked installs,
+  local verification, cloud deployment, and rollback are documented
+- **Project start date:** 08-17-26 (within the submission period; confirmed by
+  the repository creation time and entrant-local initial-commit timestamp)
+- **Architecture image:** [`docs/assets/architecture.png`](assets/architecture.png)
+- **Video captions/language:** English; `[confirm captions after final upload]`
 
 ## Elevator pitch
 
@@ -144,9 +151,11 @@ Delete this section from the public listing only after all items are verified:
 - [ ] The live action is correlated across the persisted run, Cloud Build, and
       GitHub artifact; capture the same run visibly in the console and Cloud
       Logging for the final video.
-- [ ] The architecture diagram matches the deployed system.
+- [x] The architecture diagram matches the deployed system and has a static PNG
+      in the format accepted by Devpost.
 - [ ] The public video is in English, no longer than four minutes, shows the
       working application, and visibly proves the Google Cloud backend.
-- [ ] Entrant eligibility, team acceptance, provenance, licenses, and any private
-      repository judge access are confirmed.
+- [x] Entrant eligibility is confirmed for a solo Australian individual over the
+      local age of majority, with no employer entry or team acceptance required.
+      The repository is public; provenance and third-party notices are recorded.
 - [ ] The submission-linked commit and artifacts are frozen for judging.
