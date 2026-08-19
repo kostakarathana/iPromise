@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
@@ -36,9 +35,9 @@ from ipromise_agent.service import AuditService
 from ipromise_agent.store import InMemoryRunStore
 
 from conftest import FakeReferenceClient
+from remediation_fixtures import locked_remediation_preimages
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 BASE_SHA = "a" * 40
 REPOSITORY = GitHubRepository(
     id=101,
@@ -57,11 +56,10 @@ class _Source:
         self.calls += 1
         assert target == REPOSITORY
         assert paths == ALLOWED_REMEDIATION_PATHS
+        preimages = locked_remediation_preimages()
         return RepositorySourceSnapshot(
             base_sha=BASE_SHA,
-            files=tuple(
-                (path, (REPOSITORY_ROOT / path).read_bytes()) for path in paths
-            ),
+            files=tuple((path, preimages[path]) for path in paths),
         )
 
 
