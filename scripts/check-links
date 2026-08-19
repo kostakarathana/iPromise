@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo_root"
+
+command -v node >/dev/null 2>&1 || {
+  echo "Node.js is required for the Markdown link gate." >&2
+  exit 1
+}
+
+find README.md AGENTS.md THIRD_PARTY_NOTICES.md docs \
+  -type f -name '*.md' -print0 \
+  | xargs -0 pnpm dlx markdown-link-check@3.13.7 \
+      -q -c .markdown-link-check.json

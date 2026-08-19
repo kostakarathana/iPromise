@@ -1,10 +1,11 @@
 # iPromise evaluation plan
 
-Status: the core deployed reliability and duplicate-suppression gates were
-measured on **2026-08-18 AEST**. Model-quality targets remain unmeasured unless
-explicitly identified below.
+Status: the core deployed reliability gate was measured on **2026-08-18 AEST**;
+the final-source external-action and duplicate-suppression proof was measured on
+**2026-08-19 AEST**. Model-quality targets remain unmeasured unless explicitly
+identified below.
 
-## Measured deployed release result
+## Historical ten-run reliability gate
 
 The actions-off reliability gate ran against frozen base
 `b5c2badacc506b78c6eed314f155ecbc2188198b` on Cloud Run revision
@@ -34,12 +35,14 @@ IDs, ten unique synthetic fixture IDs, **448.5 seconds total**, 44.5-second medi
 and 47.9-second observed p95 under the nearest-rank convention. The last figure
 describes only this ten-run sample, not general production latency.
 
-After that gate, actions were enabled only for a controlled run on current agent
-revision `ipromise-agent-00007-8p9`. Run
+After that gate, actions were enabled only for a controlled historical run on
+agent revision `ipromise-agent-00007-8p9`. Run
 `run_806d1fc144344baebb757747d1b56e83`, build
 `f4cbf983-db73-4bf5-9504-93c253a4b98b`, opened verified draft
 [PR #7](https://github.com/kostakarathana/iPromise/pull/7) through the installed
-GitHub App. The deployed smoke then proved both idempotency layers:
+GitHub App. That PR was closed before the final-source recording and is retained
+only as historical evidence. The historical deployed smoke proved both
+idempotency layers:
 
 - same-key run `run_60edca0afdd34918805f72464662b340`, build
   `75a9e18b-766f-48e4-ad10-06b52cac0025`, replayed as the same logical run and
@@ -48,11 +51,52 @@ GitHub App. The deployed smoke then proved both idempotency layers:
   `5e77604a-5f19-4be3-9988-48809c48125c`, recognized the unchanged exact repair
   and reconciled to PR #7 rather than opening another action.
 
-Post-proof checks found exactly one deterministic remote branch, one open draft
-PR, zero issues, zero nonterminal Firestore runs, and no execution or action
-leases. Cloud Scheduler remains **PAUSED**. These results use the owned synthetic
-reference SaaS and establish only the scoped account-deletion control; they do not
-establish legal or blanket product compliance.
+At the time of that historical proof, checks found one deterministic remote
+branch, one open draft PR, zero issues, zero nonterminal Firestore runs, and no
+execution or action leases. The generated PR was later closed. These results use
+the owned synthetic reference SaaS and establish only the scoped
+account-deletion control; they do not establish legal or blanket product
+compliance.
+
+## Final-source live action and duplicate proof
+
+The deployed product source for the final recording is
+`a4e7a59f89a60d2ba0ad087d884836d22e5d39e4`. Actions were enabled only on agent
+revision `ipromise-agent-00012-2gm` for the controlled proof. Creator run
+`run_74ea1919b21a47b9846a4d3c5efb48b8` used synthetic fixture
+`syn_ca95780e5f9067a4641fd15384f90dd1` and Cloud Build
+`e1a7a7a5-1878-41d6-9760-27c7085ae332`. The receipt reported the expected
+`FAIL / PASS / PASS`, exact-tree verification, and publishable status before the
+GitHub App opened verified draft
+[PR #14](https://github.com/kostakarathana/iPromise/pull/14) on deterministic
+branch `ipromise/promise-drift-085cacf0084a2728d277`. The exact PR head
+`a460858672ab176a4142c600fb9028f1b042a373` passed the
+[repository release gate](https://github.com/kostakarathana/iPromise/actions/runs/32219511076/job/95967239117).
+
+Both external idempotency layers were then exercised against the unchanged
+finding:
+
+- a distinct trigger produced run `run_a2dca42370fd42bda69f2eff361c3bfd`
+  and Cloud Build `e7966c07-97fd-4436-b7a8-8a0a1d4e86fd`, which reconciled to
+  PR #14 instead of creating another action; and
+- replaying that duplicate trigger key returned the same run ID, build ID, and
+  PR URL, while the open draft-PR count remained one.
+
+Earlier generated proof PRs #7 and #12 are closed and are not counted in the
+final open state. The final fingerprint has one deterministic branch and one
+open draft PR. After proof, GitHub actions were disabled on judge-safe agent
+revision `ipromise-agent-00013-kmv`; Cloud Scheduler is **PAUSED**, and checks
+found zero nonterminal runs and no execution or action leases.
+
+The video's continuous 0:30–1:19 live segment is the distinct duplicate run
+`run_a2dca42370fd42bda69f2eff361c3bfd`, not the creator run. It executes the
+complete Gemini/ADK/control/Cloud Build workflow and reconciles to PR #14. The
+capture retains all 202 frames in its selected interval in original order and
+preserves the measured wall-clock interval when the browser sampler paused. It
+omits only 98 trailing post-completion frames, without accelerating or removing
+in-run time. The video then
+shows the creator Cloud Logging receipt, creator build, PR, and diff as a
+separate provenance sequence.
 
 ## Evaluation principles
 
@@ -126,15 +170,22 @@ Measured items are marked; the remainder are release targets:
 - **Passed:** ten consecutive deployed demo-path runs completed without manual
   repair.
 - **Passed for backend timeout:** the ten-run median was 44.5 seconds and observed
-  p95 was 47.9 seconds, well inside the Cloud Run request envelope. The final
-  four-minute recorded presentation remains pending.
-- **Partially passed:** the external-action run is correlated across the persisted
-  run, verifier receipt, and draft PR. Capture the same run in the final console
-  and Cloud Logging video proof.
-- **Passed:** same-key replay and a distinct occurrence of the unchanged finding
-  both produced exactly one remote PR in total.
-- An unsafe candidate and incomplete evidence both fail closed.
-- A fresh-machine setup rehearsal follows the final README successfully.
+  p95 was 47.9 seconds, well inside the Cloud Run request envelope. A 3:30,
+  1920×1080 English video master with burned captions has been produced locally;
+  full decode, timing, caption, audio, and privacy QA passed. Public upload and
+  logged-out playback remain pending.
+- **Passed for the final action artifacts:** creator run
+  `run_74ea1919b21a47b9846a4d3c5efb48b8` is correlated to its verifier receipt,
+  exact GitHub head, open draft PR, and green repository check. The local video
+  shows those creator receipts after, and separately from, the continuous
+  duplicate run. Public playback remains a separate submission gate.
+- **Passed:** same-key replay returned one logical duplicate run, and a distinct
+  occurrence of the unchanged finding reconciled to the same PR #14.
+- **Passed locally:** unsafe candidates and incomplete evidence fail closed.
+- **Passed:** a clean public clone of deployed source
+  `a4e7a59f89a60d2ba0ad087d884836d22e5d39e4` completed the full documented
+  `./scripts/verify` release gate on 2026-08-19 AEST. Repeat the same check from
+  the immutable submission tag after it is created.
 - The implemented Cloud Build verifier completes repeated deployed runs within its
   deadline. Any future Cloud Run Sandbox backend is adopted only after it passes the
   same contract and reliability gate.

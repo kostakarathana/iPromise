@@ -173,14 +173,14 @@ The listed cash pool is $180,000. It includes a $50,000 Grand Prize; $20,000 for
 - Primary model: exact stable `gemini-3.5-flash` through Vertex AI at the `global` location, reconsidered only after a fixed documented evaluation. The model is not available in `us-central1`; keep the Cloud Run region and Vertex model location separate.
 - Agent framework: Google ADK with typed, mostly deterministic graph nodes.
 - Core Google Cloud services for the minimum: Cloud Run, Cloud Scheduler,
-  Firestore, Secret Manager, Cloud Logging, and Vertex AI. Pub/Sub and Cloud
+  Firestore, Secret Manager, Cloud Logging, Cloud Build, and Vertex AI. Pub/Sub and Cloud
   Storage are target components only when the verifier/artifact flow genuinely
   uses them; never claim them from configuration alone.
 - Judge-facing console: Next.js App Router on Cloud Run.
 - Primary external action: a verified GitHub draft PR through a least-privilege GitHub App. GitHub Issue and email are safe secondary routes.
 - Verification: Cloud Run Sandboxes only after a reliability gate, with a fail-closed Cloud Build backend under the same verifier contract.
 
-## Decisions still to make
+## Resolved and deferred decisions
 
 Do not silently invent these. Resolve them from product evidence or explicit user direction and record the decisions in durable project documentation:
 
@@ -189,8 +189,15 @@ Do not silently invent these. Resolve them from product evidence or explicit use
   no employment conflict. Optimize the secondary-prize strategy for the
   Individual/Hobbyist awards, subject to a final full Official Rules eligibility
   check immediately before submission.
-- Whether multimodality or an additional Google AI model genuinely strengthens the experience.
-- Demo script, evaluation plan, and judge-access strategy.
+- Multimodality and additional Google AI models are deliberately deferred for
+  this submission. They do not strengthen the verified account-deletion workflow
+  enough to justify weakening the core reliability and demo story.
+- The demo, evaluation, and judge-access strategies are locked: use the recorded
+  3:30 English cut in `docs/demo-script.md`, the reliability and release evidence
+  in `docs/evaluation.md`, and the hosted console with the access code supplied
+  only through Devpost's private testing field. Keep the judge-facing revision
+  actions-off, preload the successful run and PR receipt, and treat a fresh rerun
+  as optional rather than required for judging.
 - Cloud-credit request: **submitted 2026-08-17 AEST** through the current official
   Resources-page form for the Taskmaster track, using the exact Devpost account
   email. Do not submit another request unless Google/Devpost explicitly denies it.

@@ -1,202 +1,185 @@
-# iPromise demo script
+# iPromise recorded demo cut sheet
 
-Target duration: **3:50**, normal speed. The central proof is one continuous,
-uncut, actions-on audit that creates a new verified GitHub draft pull request.
-The binding limit is four minutes under the
-[official rules](https://allthingsagentichackathon.devpost.com/rules); assume
-nothing after 4:00 will be judged.
+Duration: **3:30**, 1920×1080, English narration, burned English captions. The
+binding judging limit is four minutes under the
+[official rules](https://allthingsagentichackathon.devpost.com/rules).
 
-Status: recording plan. Rehearse against the final frozen build, then record the
-same path with Cloud Scheduler **PAUSED**. The manual trigger and Scheduler use
-the same idempotent audit service; pausing the recurring trigger prevents an
-unattended run from consuming the one clean draft-PR identity needed on camera.
+Status: final local master recorded and QA-verified at
+`artifacts/video/browser-native/ipromise-hackathon-demo-final.mp4`. Its SHA-256 is
+`b86db66c9ff511f8c27aa3537825c5c37e9097f4dd3620e610b07772fee971bd`.
+The entrant-authored narration uses Google Cloud Text-to-Speech
+`en-AU-Neural2-C` at speaking rate `1.10`; it is submission-production tooling,
+not a product-model bonus claim.
+Public upload, processing, and logged-out playback remain pending.
+Cloud Scheduler was **PAUSED** during recording and remains paused.
 
-## Before recording
+## What the recording proves
 
-Prepare these views without exposing credentials or unrelated browser tabs:
+The continuous live segment records a **distinct duplicate occurrence**, not the
+earlier PR-creation event. From 0:30 to 1:19, run
+`run_a2dca42370fd42bda69f2eff361c3bfd` executes the complete live
+Gemini/Google ADK/control/Cloud Build workflow in a 49-second browser-frame
+capture. All 202 frames in the retained interval remain in original order. The
+measured interval where the browser sampler paused is represented by holding the
+last captured frame, so no retained wall-clock time is silently removed. The cut
+omits 98 trailing frames only after the completed PR state is visible; it does
+not accelerate or remove any in-run time. Its Cloud Build is
+`e7966c07-97fd-4436-b7a8-8a0a1d4e86fd`. Because the unchanged finding already
+had an open exact-repair action, the run correctly reconciles to existing draft
+[PR #14](https://github.com/kostakarathana/iPromise/pull/14) instead of creating
+a duplicate.
 
-1. The authenticated hosted iPromise console at the top of the Promise Ledger.
-2. The deployed synthetic reference SaaS privacy page, with its synthetic label
-   and account-deletion promise visible.
-3. Cloud Logging with this query ready; paste the live run ID after completion:
+Immediately afterward, the recording shows the earlier creator proof that opened
+that PR: Cloud Logging receipt `run_74ea1919b21a47b9846a4d3c5efb48b8` on
+actions-on revision `ipromise-agent-00012-2gm`, Cloud Build
+`e1a7a7a5-1878-41d6-9760-27c7085ae332`, and PR #14 with its exact scoped diff.
+The creator and filmed duplicate runs are related by the same finding/action
+fingerprint, but they are not presented as one run.
 
-   ```text
-   resource.type="cloud_run_revision"
-   resource.labels.service_name="ipromise-agent"
-   jsonPayload.event="ipromise.audit.receipt"
-   jsonPayload.runId="PASTE_RUN_ID"
-   ```
+## Recorded timeline
 
-4. The `ipromise-agent` Cloud Run service page.
-5. The public README architecture diagram.
-6. The public GitHub repository, ready to open the new draft PR.
+### 0:00–0:09 — Cover and hook
 
-Pre-warm the pages, confirm external actions are enabled, confirm no run or
-action lease is active, and confirm no draft PR already exists for the final
-base/candidate fingerprint. Do not start or resume the Scheduler.
+**Visual:** iPromise cover and product promise.
 
-## 0:00–0:08 — Hook
+**Proof:** Establishes the product: customer promises become recurring,
+evidence-backed controls and bounded engineering actions.
 
-**Visual:** Hosted iPromise Promise Ledger.
+### 0:09–0:20 — Exact synthetic policy
 
-**Narration:**
+**Visual:** Deployed synthetic reference SaaS privacy page and account-deletion
+sentence.
 
-> Your product makes promises in privacy pages, terms, help docs, and UI copy.
-> iPromise turns those words into recurring controls—and when reality drifts, it
-> finishes the engineering handoff.
+**Proof:** The source and data are entrant-owned synthetic fixtures, not customer
+data. The exact promise says: “When you delete your account, we remove your
+profile from our app and analytics system within 24 hours.”
 
-## 0:08–0:21 — The exact promise
+### 0:20–0:30 — Console before the run
 
-**Visual:** Deployed synthetic reference SaaS privacy page. Highlight the
-account-deletion sentence and the visible synthetic disclosure.
+**Visual:** Hosted iPromise Promise Ledger before triggering the audit.
 
-**Narration:**
+**Proof:** Shows the selected authorized repository and the compact
+promise-to-proof-to-action interface. The workflow is a Taskmaster service, not a
+chat interaction.
 
-> This is an entrant-owned synthetic SaaS with synthetic users, not customer
-> data. It promises that account deletion removes profile and activity data from
-> active systems within 24 hours.
+### 0:30–1:19 — Continuous live distinct-duplicate run
 
-## 0:21–0:34 — Scope and trigger
+**Visual:** One click starts the audit. The hosted console remains visible for
+the entire run. Browser frames retain original order and measured wall-clock
+intervals; the sampler pause is held rather than removed.
 
-**Visual:** Return to iPromise. Briefly show the authorized
-`kostakarathana/iPromise` repository and Taskmaster workflow. Put
-`LIVE RUN · UNCUT · NORMAL SPEED` on screen.
+**Run:** `run_a2dca42370fd42bda69f2eff361c3bfd`
 
-**Narration:**
+**Build:** `e7966c07-97fd-4436-b7a8-8a0a1d4e86fd`
 
-> iPromise is a Taskmaster agent. Scheduled and manual triggers enter the same
-> idempotent service. From this click onward, the workflow runs without
-> step-by-step instructions.
+**Proof:** The run performs source capture, Gemini 3.5 Flash claim compilation on
+Vertex AI, Google ADK orchestration, deterministic grounding/control binding,
+synthetic deletion probing, scoped verdict computation, and the fixed Cloud
+Build red-before/green-after/exact-tree verification. The application profile is
+removed while the analytics profile remains, so deterministic code returns the
+scoped `CONTRADICTED` verdict. The final action reconciles to existing PR #14;
+this filmed run does **not** claim to create a new PR.
 
-## 0:34–1:43 — One uncut live run
+### 1:19–1:31.5 — Completed duplicate-run receipt
 
-**Visual:** Click **Run audit** once. Keep the console continuously visible while
-Activity advances through capture, compilation, control binding, probe,
-verification, and publication. Do not cut away, accelerate, or trigger another
-run. Let the real loading time remain visible.
+**Visual:** Completed console summary for the filmed run.
 
-**Narration:**
+**Proof:** Shows `CONTRADICTED`, the complete verification receipt, and the
+existing PR #14 action URL returned by remote reconciliation.
 
-> The agent captures and hashes the exact source. Gemini 3.5 Flash on Vertex AI,
-> coordinated by Google ADK on Cloud Run, converts the language into a typed
-> claim. Deterministic code verifies the quote, binds only a registered control,
-> creates a randomized synthetic account, invokes the deployed deletion API, and
-> probes each approved active store.
->
-> The app profile disappears, but the analytics profile remains. Code—not the
-> model—returns CONTRADICTED for this scoped control. That is operational
-> evidence, not a legal or blanket compliance verdict.
+### 1:31.5–1:43 — Activity trail
 
-If the terminal result has not appeared by 1:43, continue the uninterrupted
-segment up to 2:04 and shorten the later architecture view. If it has not
-completed within 90 seconds, stop and record a new truthful take after diagnosing
-the run; never splice in an earlier result.
+**Visual:** Activity details for the filmed duplicate run.
 
-## 1:43–2:08 — The safety gate
+**Proof:** Shows the autonomous state sequence and model/control/build events for
+the same `run_a2dca42370fd42bda69f2eff361c3bfd` execution.
 
-**Visual:** Show the terminal `CONTRADICTED` result and compact verification
-receipt: expected red baseline, green candidate, green regression suite, exact
-tree match, build ID, and publishable status.
+### 1:43–1:58.5 — Creator Cloud Logging receipt
 
-**Narration:**
+**Visual:** Structured Cloud Logging receipt for the earlier creator run.
 
-> iPromise will not publish unverified code. A fixed Cloud Build program first
-> proves the known failing baseline, then the repaired hidden control and full
-> regression suite. It also proves the candidate tree exactly matches the bytes
-> approved for publication.
+**Creator run:** `run_74ea1919b21a47b9846a4d3c5efb48b8`
 
-## 2:08–2:28 — Independent Cloud Build proof
+**Revision:** `ipromise-agent-00012-2gm`
 
-**Visual:** Open the run's Cloud Build link. Show the successful build and its
-red-before/green-after verification steps. Keep the build ID visible.
+**Proof:** Establishes the model invocation, Google ADK workflow, deployed Cloud
+Run revision, final action state, and correlation for the run that created PR
+#14. This is explicitly a prior creator receipt, not the continuously filmed run.
 
-**Narration:**
+### 1:58.5–2:15 — Creator Cloud Build receipt
 
-> This is the independent verifier running with a dedicated Google Cloud identity
-> and no GitHub or runtime secrets. A failed or ambiguous receipt closes the
-> publication gate.
+**Visual:** Cloud Build details for
+`e1a7a7a5-1878-41d6-9760-27c7085ae332`.
 
-## 2:28–2:47 — Same-run observability
+**Proof:** Shows the independent verifier used by the creator run: expected red
+baseline, green repaired control, green regression suite, and exact-tree gate.
+The verifier identity has no GitHub or runtime credentials.
 
-**Visual:** Open Cloud Logging, paste the visible run ID into the prepared query,
-and show the matching structured receipt. Briefly show the Cloud Run service and
-`.run.app` deployment identity.
+### 2:15–2:34 — Existing verified draft PR
 
-**Narration:**
+**Visual:** [Draft PR #14](https://github.com/kostakarathana/iPromise/pull/14).
 
-> The same run ID connects the Cloud Run agent, Firestore checkpoints, Vertex and
-> ADK model event, Cloud Build verification, and structured Cloud Logging receipt.
+**Proof:** Shows the real open draft action created by the earlier creator run,
+including its bounded scope and provenance. The filmed duplicate run returned
+this same PR rather than opening another one.
 
-## 2:47–3:00 — Bounded authority
+### 2:34–2:49 — Exact scoped diff
 
-**Visual:** Return to the completed ledger and expand technical details or the
-action receipt.
+**Visual:** PR #14 file changes.
 
-**Narration:**
+**Proof:** Shows the exact two-file repair admitted by the locked policy and
+verified before publication. Human review remains the final authority; the agent
+cannot merge or deploy.
 
-> The GitHub App is installed only on this repository. The implemented publisher
-> exposes no merge or deploy operation and creates draft pull requests only.
-> Ambiguous repairs fall back to an issue; configured email escalation remains a
-> separate bounded route.
+### 2:49–3:01 — Cloud Run deployment
 
-## 3:00–3:29 — The real external action
+**Visual:** `ipromise-agent` Cloud Run service.
 
-**Visual:** Follow the new draft-PR link. Show the **Draft** badge, exact scoped
-change, run/build provenance, and green release-gate check. Do not merge it.
+**Proof:** Visibly establishes the Google Cloud backend and deployed service
+identity. The recorded actions-on revision is `ipromise-agent-00012-2gm`; after
+proof, traffic moved to judge-safe actions-off revision
+`ipromise-agent-00013-kmv` with Scheduler paused.
 
-**Narration:**
+### 3:01–3:22 — Architecture
 
-> This draft PR was created by the live run we just watched. It contains the exact
-> verified repair, the customer promise, scoped evidence, limitations, and
-> matching run and build provenance. Human review remains the final authority.
+**Visual:** Public iPromise architecture diagram.
 
-If the GitHub Actions check is still running, show the queued check truthfully and
-use the already-green Cloud Build receipt as the live proof. Do not imply that CI
-has completed until it has.
+**Proof:** Shows Gemini 3.5 Flash on Vertex AI, Google ADK on Cloud Run,
+Firestore state, Cloud Scheduler triggers, Cloud Build verification, Secret
+Manager, Cloud Logging, the synthetic SaaS, and the scoped GitHub App. It also
+shows the trust boundary: model output proposes structured meaning while code
+owns evidence, credentials, verification, and side effects.
 
-## 3:29–3:44 — Architecture
+### 3:22–3:30 — Close
 
-**Visual:** Public README architecture diagram.
+**Visual:** iPromise closing frame.
 
-**Narration:**
-
-> The design separates probabilistic claim compilation from deterministic
-> grounding, probing, verdicts, and action gates. Cloud Run executes the console,
-> synthetic product, and ADK agent; Vertex AI runs Gemini; Firestore checkpoints
-> state; Cloud Scheduler provides recurring triggers; and Cloud Build verifies
-> the repair before GitHub sees it.
-
-## 3:44–3:50 — Close
-
-**Visual:** Return to the Promise Ledger: Promise → Proof → Draft PR.
-
-**Narration:**
-
-> iPromise is CI for company truth: if you promise it, prove it.
+**Message:** Customer promises should behave like tests. If you promise it,
+prove it.
 
 ## Recording truth checklist
 
-- The central run is live, uncut, normal speed, and creates a new draft PR during
-  the recording.
+- The 0:30–1:19 segment is one continuous live execution represented by all 202
+  retained browser frames in original order and their measured wall-clock timing.
+  The cut omits only 98 trailing post-completion frames.
+- That live execution is the distinct duplicate run
+  `run_a2dca42370fd42bda69f2eff361c3bfd`; it performs the full workflow and
+  reconciles to PR #14.
+- The recording does not claim that the filmed duplicate run created PR #14.
+- The creator receipt shown at 1:43–2:15 is clearly the earlier run
+  `run_74ea1919b21a47b9846a4d3c5efb48b8` and creator build
+  `e1a7a7a5-1878-41d6-9760-27c7085ae332`.
 - The synthetic SaaS and synthetic data are disclosed visually and verbally.
-- The model, framework, and services are named exactly: Gemini 3.5 Flash on
-  Vertex AI, Google ADK, Cloud Run, Firestore, Cloud Scheduler, Cloud Build,
-  Secret Manager, and Cloud Logging.
-- The run ID, timestamps, source hash, build ID, exact-tree receipt, deployed
-  revision, and GitHub draft PR are mutually consistent.
-- The verdict is scoped to the tested control and never presented as legal or
-  blanket compliance.
+- The scoped verdict is never presented as legal or blanket compliance.
 - No secret, access code, API token, private prompt, personal tab, or unrelated
   product is visible.
-- The exported video is below 4:00, in English, and tested through public playback
-  while logged out.
-- The public repository, architecture image, hosted URL, and video remain stable
-  through judging.
+- The local master is 3:30 with English narration and burned English captions.
+- Decode, timing, caption, audio, and privacy QA passed. Public upload,
+  processing, and logged-out playback remain pending.
 
 ## Failure policy
 
-Keep one truthful fallback recording of the same frozen release. A fallback may
-show an earlier genuine run only when its timestamp is visible and narration says
-that it is a prior run. Never substitute a precomputed receipt for the live run,
-hide a failed gate, splice separate runs into one apparent workflow, or claim a
-queued check passed.
+Keep one truthful fallback recording of the same deployed source. Never relabel a
+duplicate-reconciliation run as the PR creator, substitute a precomputed receipt
+for a live segment, hide a failed gate, splice separate runs into one apparent
+execution, or claim a queued check passed.
