@@ -242,6 +242,11 @@ async def test_verified_candidate_is_primary_idempotent_draft_pr(settings) -> No
     assert first.status == RunStatus.COMPLETE
     assert pull_request.state == ActionState.OPENED
     assert pull_request.url == "https://github.com/kostakarathana/iPromise/pull/7"
+    assert pull_request.reason == (
+        "Verified exact candidate published as a draft. "
+        "The implemented publisher exposes no merge or deploy operation and creates "
+        "draft pull requests only."
+    )
     assert issue.state == ActionState.SKIPPED
     assert first.remediation is not None
     assert first.remediation.base_reference == BASE_SHA
@@ -362,9 +367,14 @@ async def test_verifier_runs_with_external_actions_disabled(settings) -> None:
     assert run.verification is not None and run.verification.publishable is True
     assert source.calls == verifier.calls == 1
     assert github.pr_calls == github.issue_calls == 0
-    assert next(
+    pull_request = next(
         action for action in run.actions if action.kind == ActionKind.PULL_REQUEST
-    ).state == ActionState.BLOCKED
+    )
+    assert pull_request.state == ActionState.BLOCKED
+    assert pull_request.reason == (
+        "Verified draft PR publication is disabled for this run; "
+        "no external action was attempted."
+    )
 
 
 @pytest.mark.asyncio
