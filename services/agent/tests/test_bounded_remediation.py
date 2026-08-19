@@ -8,12 +8,14 @@ import pytest
 import ipromise_agent.remediation as remediation
 from ipromise_agent.remediation import (
     ALLOWED_REMEDIATION_PATHS,
+    EXPECTED_CANDIDATE_SHA256 as LOCKED_CANDIDATE_SHA256,
     EXPECTED_PREIMAGE_SHA256,
     MAX_PREIMAGE_FILE_BYTES,
     BoundedRemediationError,
     _replace_exactly_once,
     build_bounded_remediation_artifact,
 )
+from remediation_fixtures import locked_remediation_preimages
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -31,15 +33,8 @@ EXPECTED_DIFF_SHA256 = (
 )
 
 
-def _repository_preimages() -> dict[str, bytes]:
-    return {
-        path: (REPOSITORY_ROOT / path).read_bytes()
-        for path in ALLOWED_REMEDIATION_PATHS
-    }
-
-
 def test_builds_byte_exact_two_file_candidate_and_canonical_diff() -> None:
-    preimages = _repository_preimages()
+    preimages = locked_remediation_preimages()
 
     artifact = build_bounded_remediation_artifact(
         base_reference=BASE_SHA,
@@ -86,7 +81,7 @@ def test_builds_byte_exact_two_file_candidate_and_canonical_diff() -> None:
 
 
 def test_fetcher_receives_only_approved_paths_and_produces_same_artifact() -> None:
-    preimages = _repository_preimages()
+    preimages = locked_remediation_preimages()
     fetched: list[tuple[str, str]] = []
 
     def fetch(base_reference: str, path: str) -> bytes:
@@ -116,12 +111,12 @@ def test_rejects_non_exact_base_references(base_reference: str) -> None:
     with pytest.raises(BoundedRemediationError, match="full lowercase"):
         build_bounded_remediation_artifact(
             base_reference=base_reference,
-            preimages=_repository_preimages(),
+            preimages=locked_remediation_preimages(),
         )
 
 
 def test_rejects_missing_extra_and_dual_preimage_sources() -> None:
-    preimages = _repository_preimages()
+    preimages = locked_remediation_preimages()
     missing = dict(preimages)
     missing.pop(ALLOWED_REMEDIATION_PATHS[1])
     extra = {**preimages, ".github/workflows/verify.yml": b"unsafe"}
@@ -147,7 +142,7 @@ def test_rejects_missing_extra_and_dual_preimage_sources() -> None:
 
 
 def test_rejects_preimage_drift_before_generating_candidate_bytes() -> None:
-    preimages = _repository_preimages()
+    preimages = locked_remediation_preimages()
     path = ALLOWED_REMEDIATION_PATHS[0]
     preimages[path] = preimages[path].replace(
         b"Complete deletion",
@@ -164,7 +159,7 @@ def test_rejects_preimage_drift_before_generating_candidate_bytes() -> None:
 
 
 def test_rejects_non_bytes_and_oversized_preimages_before_hashing() -> None:
-    preimages = _repository_preimages()
+    preimages = locked_remediation_preimages()
     path = ALLOWED_REMEDIATION_PATHS[0]
     preimages[path] = "not bytes"  # type: ignore[assignment]
 
@@ -185,7 +180,7 @@ def test_rejects_non_bytes_and_oversized_preimages_before_hashing() -> None:
 def test_rejects_oversized_candidate_and_diff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    preimages = _repository_preimages()
+    preimages = locked_remediation_preimages()
 
     monkeypatch.setattr(
         remediation,
@@ -228,7 +223,7 @@ def test_approved_edit_helper_rejects_missing_or_ambiguous_anchor(
 def test_candidate_tree_mapping_cannot_mutate_the_artifact() -> None:
     artifact = build_bounded_remediation_artifact(
         base_reference=BASE_SHA,
-        preimages=_repository_preimages(),
+        preimages=locked_remediation_preimages(),
     )
     candidate_tree = artifact.candidate_tree
     path = ALLOWED_REMEDIATION_PATHS[0]
@@ -237,4 +232,18 @@ def test_candidate_tree_mapping_cannot_mutate_the_artifact() -> None:
     assert artifact.candidate_tree[path] != b"tampered"
     assert hashlib.sha256(artifact.candidate_tree[path]).hexdigest() == (
         artifact.candidate_hashes[path]
+    )
+
+
+def test_checkout_has_one_coherent_approved_remediation_state() -> None:
+    """The release gate supports only the exact red baseline or green candidate."""
+
+    observed = {
+        path: hashlib.sha256((REPOSITORY_ROOT / path).read_bytes()).hexdigest()
+        for path in ALLOWED_REMEDIATION_PATHS
+    }
+
+    assert observed in (EXPECTED_PREIMAGE_SHA256, LOCKED_CANDIDATE_SHA256), (
+        "Approved remediation files must be the complete locked preimage pair or "
+        "the complete locked candidate pair"
     )

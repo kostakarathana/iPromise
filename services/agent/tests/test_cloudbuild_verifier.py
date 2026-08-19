@@ -34,6 +34,7 @@ from ipromise_agent.remediation import (
     CandidateFile,
     build_bounded_remediation_artifact,
 )
+from remediation_fixtures import locked_remediation_preimages
 
 
 BASE_SHA = "a" * 40
@@ -45,13 +46,9 @@ SERVICE_ACCOUNT = (
 
 
 def _artifact() -> BoundedRemediationArtifact:
-    repository_root = Path(__file__).resolve().parents[3]
     return build_bounded_remediation_artifact(
         base_reference=BASE_SHA,
-        preimages={
-            path: (repository_root / path).read_bytes()
-            for path in ALLOWED_REMEDIATION_PATHS
-        },
+        preimages=locked_remediation_preimages(),
     )
 
 
@@ -385,6 +382,11 @@ def test_trusted_control_is_red_before_green_after_and_regression_passes(
         copy_root / "apps" / "demo_saas",
         ignore=shutil.ignore_patterns(".venv", "__pycache__", ".pytest_cache"),
     )
+    # Cloud Build verifies the captured vulnerable base SHA even when this test
+    # itself runs from the generated repair branch.  Recreate that exact base
+    # from independent hash-locked fixtures before exercising red -> green.
+    for path, content in locked_remediation_preimages().items():
+        (copy_root / path).write_bytes(content)
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(copy_root / "apps" / "demo_saas" / "src")
     environment["IPROMISE_VERIFIER_WORKSPACE"] = str(copy_root)
